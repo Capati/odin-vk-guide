@@ -1,30 +1,39 @@
 package main
 
-// //> init_cmd
-// VkCommandPoolCreateInfo vkinit::command_pool_create_info(uint32_t queueFamilyIndex,
-//     VkCommandPoolCreateFlags flags /*= 0*/)
-// {
-//     VkCommandPoolCreateInfo info = {};
-//     info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-//     info.pNext = nullptr;
+// Vendor
+import vk "vendor:vulkan"
 
-//     info.flags = flags;
-//     return info;
-// }
+command_pool_create_info :: proc(
+	queue_family_index: u32,
+	flags: vk.CommandPoolCreateFlags = {},
+) -> (
+	info: vk.CommandPoolCreateInfo,
+) {
+	info = vk.CommandPoolCreateInfo {
+		sType            = .COMMAND_POOL_CREATE_INFO,
+		queueFamilyIndex = queue_family_index,
+		flags            = flags,
+	}
 
+	return
+}
 
-// VkCommandBufferAllocateInfo vkinit::command_buffer_allocate_info(
-//     VkCommandPool pool, uint32_t count /*= 1*/)
-// {
-//     VkCommandBufferAllocateInfo info = {};
-//     info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-//     info.pNext = nullptr;
+command_buffer_allocate_info :: proc(
+	pool: vk.CommandPool,
+	count: u32,
+) -> (
+	info: vk.CommandBufferAllocateInfo,
+) {
+	info = vk.CommandBufferAllocateInfo {
+		sType              = .COMMAND_BUFFER_ALLOCATE_INFO,
+		commandPool        = pool,
+		commandBufferCount = count,
+		level              = .PRIMARY,
+	}
 
-//     info.commandPool = pool;
-//     info.commandBufferCount = count;
-//     info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-//     return info;
-// }
+	return
+}
+
 // //< init_cmd
 // //
 // //> init_cmd_draw

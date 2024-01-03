@@ -9,7 +9,14 @@ Window_Error :: enum {
 	Create_Window_Failed,
 }
 
+Vulkan_Error :: enum {
+	None,
+	Vulkan_Create_Error,
+	Vulkan_Allocate_Error,
+}
+
 Error :: union #shared_nil {
 	Window_Error,
 	vkb.Error,
+	Vulkan_Error,
 }

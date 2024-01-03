@@ -25,7 +25,17 @@ Engine :: struct {
 	swapchain_format:      vk.Format,
 	swapchain_images:      []vk.Image,
 	swapchain_image_views: []vk.ImageView,
+	frames:                [FRAME_OVERLAP]Frame_Data,
+	graphics_queue:        vk.Queue,
+	graphics_queue_family: u32,
 }
+
+Frame_Data :: struct {
+	command_pool:        vk.CommandPool,
+	main_command_buffer: vk.CommandBuffer,
+}
+
+FRAME_OVERLAP: u32 : 2
 
 @(private)
 _engine: Engine
@@ -58,16 +68,19 @@ engine_init :: proc() -> (err: Error) {
 	}
 
 	if res := engine_init_vulkan(); res != nil {
-		log.errorf("Failed to initialize Vulkan: [%v]\n", res)
+		log.errorf("Failed to initialize Vulkan: [%v]", res)
 		return res
 	}
 
 	if res := engine_init_swapchain(); res != nil {
-		log.errorf("Failed to initialize Swapchain: [%v]\n", res)
+		log.errorf("Failed to initialize Swapchain: [%v]", res)
 		return res
 	}
 
-	engine_init_commands()
+	if res := engine_init_commands(); res != nil {
+		log.errorf("Failed to initialize commands: [%v]", res)
+		return res
+	}
 
 	engine_init_sync_structures()
 
@@ -130,6 +143,10 @@ engine_init_vulkan :: proc() -> (err: Error) {
 	_engine.device = vkb.build_device(&device_builder) or_return
 	defer if err != nil do vkb.destroy_device(_engine.device)
 
+	// use vk-bootstrap to get a Graphics queue
+	_engine.graphics_queue = vkb.device_get_queue(_engine.device, .Graphics) or_return
+	_engine.graphics_queue_family = vkb.device_get_queue_index(_engine.device, .Graphics) or_return
+
 	return
 }
 
@@ -159,8 +176,43 @@ engine_init_swapchain :: proc() -> (err: Error) {
 	return engine_create_swapchain(_engine.window_extent.width, _engine.window_extent.height)
 }
 
-engine_init_commands :: proc() {
+engine_get_current_frame :: proc() -> Frame_Data {
+	return _engine.frames[_engine.frame_number % FRAME_OVERLAP]
+}
 
+engine_init_commands :: proc() -> (err: Error) {
+	//create a command pool for commands submitted to the graphics queue.
+	//we also want the pool to allow for resetting of individual command buffers
+	command_pool_info := command_pool_create_info(
+		_engine.graphics_queue_family,
+		{.RESET_COMMAND_BUFFER},
+	)
+
+	for i in 0 ..< FRAME_OVERLAP {
+		if res := vk.CreateCommandPool(
+			_engine.device.ptr,
+			&command_pool_info,
+			nil,
+			&_engine.frames[i].command_pool,
+		); res != .SUCCESS {
+			log.errorf("Failed to create command pool for frame [%d]: [%v]", i, res)
+			return .Vulkan_Create_Error
+		}
+
+		// allocate the default command buffer that we will use for rendering
+		cmd_alloc_info := command_buffer_allocate_info(_engine.frames[i].command_pool, 1)
+
+		if res := vk.AllocateCommandBuffers(
+			_engine.device.ptr,
+			&cmd_alloc_info,
+			&_engine.frames[i].main_command_buffer,
+		); res != .SUCCESS {
+			log.errorf("Failed to allocate command buffers for frame [%d]: [%v]", i, res)
+			return .Vulkan_Allocate_Error
+		}
+	}
+
+	return
 }
 
 engine_init_sync_structures :: proc() {
@@ -177,6 +229,13 @@ engine_destroy_swapchain :: proc() {
 // Shuts down the engine
 engine_cleanup :: proc() {
 	if _engine.is_initialized {
+		//make sure the gpu has stopped doing its things
+		vk.DeviceWaitIdle(_engine.device.ptr)
+
+		for i in 0 ..< FRAME_OVERLAP {
+			vk.DestroyCommandPool(_engine.device.ptr, _engine.frames[i].command_pool, nil)
+		}
+
 		engine_destroy_swapchain()
 		vkb.destroy_device(_engine.device)
 		vkb.destroy_physical_device(_engine.chosen_gpu)
