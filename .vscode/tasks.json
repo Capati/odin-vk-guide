@@ -1,0 +1,92 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "type": "shell",
+            "label": "Build",
+            "windows": {
+                "command": "${workspaceFolder}/build-win.bat",
+                "options": {
+                    "shell": {
+                        "executable": "cmd.exe",
+                        "args": [
+                            "/d",
+                            "/c"
+                        ]
+                    }
+                }
+            },
+            "linux": {
+                "command": "${workspaceFolder}/build-unix.sh"
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "type": "shell",
+            "label": "Build & Run",
+            "windows": {
+                "command": "${workspaceFolder}/build-win.bat run",
+                "options": {
+                    "shell": {
+                        "executable": "cmd.exe",
+                        "args": [
+                            "/d",
+                            "/c"
+                        ]
+                    }
+                }
+            },
+            "linux": {
+                "command": "${workspaceFolder}/build-unix.sh run"
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        },
+		{
+            "type": "shell",
+            "label": "Release x86_64",
+            "windows": {
+                "command": "odin",
+                "args": [
+                    "build",
+                    "./src",
+                    "-o:speed",
+                    "-disable-assert",
+                    "-no-bounds-check",
+                    "-target:windows_amd64",
+                    "-subsystem:windows",
+                    "-define:CHECK_TO_BYTES=false",
+                    "-out:./build/engine.exe"
+                ]
+            },
+            "linux": {
+                "command": "odin",
+                "args": [
+                    "build",
+                    "./src",
+                    "-o:speed",
+                    "-disable-assert",
+                    "-no-bounds-check",
+                    "-target:linux_amd64",
+                    "-define:CHECK_TO_BYTES=false",
+                    "-out:./build/engine"
+                ]
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": []
+        },
+    ]
+}

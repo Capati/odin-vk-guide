@@ -1,0 +1,20 @@
+# Build
+
+/build/*
+!/build/assets/
+!/build/SDL2.dll
+
+# Bin
+
+*.o
+
+# Sublime Text
+
+*.sublime-workspace
+
+# vs code
+
+/.vscode/*.log
+
+# Odin
+ols.json

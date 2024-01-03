@@ -1,0 +1,39 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "(gdb) Launch",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/RenderLink",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "preLaunchTask": "Build",
+            "setupCommands": [
+                {
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "(Windows) Launch",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/RenderLink.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "preLaunchTask": "Build"
+        }
+    ]
+}
