@@ -65,7 +65,7 @@
                     "-no-bounds-check",
                     "-target:windows_amd64",
                     "-subsystem:windows",
-                    "-define:CHECK_TO_BYTES=false",
+					"-collection:libs=./libs",
                     "-out:./build/engine.exe"
                 ]
             },
@@ -78,7 +78,7 @@
                     "-disable-assert",
                     "-no-bounds-check",
                     "-target:linux_amd64",
-                    "-define:CHECK_TO_BYTES=false",
+					"-collection:libs=./libs",
                     "-out:./build/engine"
                 ]
             },

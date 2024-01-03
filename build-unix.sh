@@ -22,6 +22,7 @@ odin build ./src \
     -o:none \
     -max-error-count:1 \
     -use-separate-modules \
+	-collection:libs=./libs \
     -out:$OUTPUT_DIR/$EXECUTABLE_NAME
 
 compiler_error_code=$?
