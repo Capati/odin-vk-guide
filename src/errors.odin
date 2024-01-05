@@ -15,9 +15,15 @@ Window_Error :: enum {
 	Create_Window_Failed,
 }
 
+OS_Error :: enum {
+	None,
+	Read_File_Failed,
+}
+
 Error :: union #shared_nil {
-	mem.Allocator_Error,
+	OS_Error,
 	Window_Error,
-	vkb.Error,
+	mem.Allocator_Error,
 	vk.Result,
+	vkb.Error,
 }

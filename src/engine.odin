@@ -15,26 +15,31 @@ import "libs:vkb"
 import "libs:vma"
 
 Engine :: struct {
-	is_initialized:        bool,
-	frame_number:          u32,
-	stop_rendering:        bool,
-	window_extent:         vk.Extent2D,
-	window:                ^sdl.Window,
-	instance:              ^vkb.Instance,
-	chosen_gpu:            ^vkb.Physical_Device,
-	device:                ^vkb.Device,
-	surface:               vk.SurfaceKHR,
-	swapchain:             ^vkb.Swapchain,
-	swapchain_format:      vk.Format,
-	swapchain_images:      []vk.Image,
-	swapchain_image_views: []vk.ImageView,
-	frames:                [FRAME_OVERLAP]Frame_Data,
-	graphics_queue:        vk.Queue,
-	graphics_queue_family: u32,
-	deletors:              Deletion_Queue,
-	allocator:             vma.Allocator,
-	draw_image:            Allocated_Image,
-	draw_extent:           vk.Extent2D,
+	is_initialized:               bool,
+	frame_number:                 u32,
+	stop_rendering:               bool,
+	window_extent:                vk.Extent2D,
+	window:                       ^sdl.Window,
+	instance:                     ^vkb.Instance,
+	chosen_gpu:                   ^vkb.Physical_Device,
+	device:                       ^vkb.Device,
+	surface:                      vk.SurfaceKHR,
+	swapchain:                    ^vkb.Swapchain,
+	swapchain_format:             vk.Format,
+	swapchain_images:             []vk.Image,
+	swapchain_image_views:        []vk.ImageView,
+	frames:                       [FRAME_OVERLAP]Frame_Data,
+	graphics_queue:               vk.Queue,
+	graphics_queue_family:        u32,
+	deletors:                     Deletion_Queue,
+	allocator:                    vma.Allocator,
+	draw_image:                   Allocated_Image,
+	draw_extent:                  vk.Extent2D,
+	global_descriptor_allocator:  Descriptor_Allocator,
+	draw_image_descriptors:       vk.DescriptorSet,
+	draw_image_descriptor_layout: vk.DescriptorSetLayout,
+	gradient_pipeline:            vk.Pipeline,
+	gradient_pipeline_layout:     vk.PipelineLayout,
 }
 
 @(private)
@@ -84,6 +89,16 @@ engine_init :: proc() -> (err: Error) {
 
 	if res := engine_init_sync_structures(); res != nil {
 		log.errorf("Failed to initialize sync structures: [%v]", res)
+		return res
+	}
+
+	if res := engine_init_descriptors(); res != nil {
+		log.errorf("Failed to initialize descriptors: [%v]", res)
+		return res
+	}
+
+	if res := engine_init_pipelines(); res != nil {
+		log.errorf("Failed to initialize pipelines: [%v]", res)
 		return res
 	}
 
@@ -332,6 +347,112 @@ engine_init_sync_structures :: proc() -> (err: Error) {
 	return
 }
 
+engine_init_descriptors :: proc() -> (err: Error) {
+	// Create a descriptor pool that will hold 10 sets with 1 image each
+	sizes := []Pool_Size_Ratio{{.STORAGE_IMAGE, 1}}
+
+	descriptor_allocator_init_pool(
+		&_ctx.global_descriptor_allocator,
+		_ctx.device,
+		10,
+		sizes,
+	) or_return
+
+	// Make the descriptor set layout for our compute draw
+	builder: Descriptor_Layout_Builder
+	descriptor_layout_add_binding(&builder, 0, .STORAGE_IMAGE)
+	_ctx.draw_image_descriptor_layout = descriptor_layout_build(
+		&builder,
+		_ctx.device,
+		{.COMPUTE},
+	) or_return
+
+	// Allocate a descriptor set for our draw image
+	_ctx.draw_image_descriptors = descriptor_allocator_allocate(
+		&_ctx.global_descriptor_allocator,
+		_ctx.device,
+		&_ctx.draw_image_descriptor_layout,
+	) or_return
+
+	img_info := vk.DescriptorImageInfo {
+		imageLayout = .GENERAL,
+		imageView   = _ctx.draw_image.image_view,
+	}
+
+	draw_image_write := vk.WriteDescriptorSet {
+		sType           = .WRITE_DESCRIPTOR_SET,
+		dstBinding      = 0,
+		dstSet          = _ctx.draw_image_descriptors,
+		descriptorCount = 1,
+		descriptorType  = .STORAGE_IMAGE,
+		pImageInfo      = &img_info,
+	}
+
+	vk.UpdateDescriptorSets(_ctx.device.ptr, 1, &draw_image_write, 0, nil)
+
+	deletion_queue_push_proc(&_ctx.deletors, proc() {
+		vk.DestroyDescriptorSetLayout(_ctx.device.ptr, _ctx.draw_image_descriptor_layout, nil)
+		descriptor_allocator_destroy_pool(&_ctx.global_descriptor_allocator, _ctx.device)
+	})
+
+	return
+}
+
+engine_init_pipelines :: proc() -> (err: Error) {
+	engine_init_background_pipelines() or_return
+	return
+}
+
+engine_init_background_pipelines :: proc() -> (err: Error) {
+	compute_pipeline := vk.PipelineLayoutCreateInfo {
+		sType          = .PIPELINE_LAYOUT_CREATE_INFO,
+		pSetLayouts    = &_ctx.draw_image_descriptor_layout,
+		setLayoutCount = 1,
+	}
+
+	vk.CreatePipelineLayout(
+		_ctx.device.ptr,
+		&compute_pipeline,
+		nil,
+		&_ctx.gradient_pipeline_layout,
+	) or_return
+	defer if err != nil {
+		vk.DestroyPipelineLayout(_ctx.device.ptr, _ctx.gradient_pipeline_layout, nil)
+	}
+
+	compute_draw_shader := load_shader_module("../src/shaders/gradient.spv", _ctx.device) or_return
+	defer vk.DestroyShaderModule(_ctx.device.ptr, compute_draw_shader, nil)
+
+	stage_info := vk.PipelineShaderStageCreateInfo {
+		sType = .PIPELINE_SHADER_STAGE_CREATE_INFO,
+		stage = {.COMPUTE},
+		module = compute_draw_shader,
+		pName = "main",
+	}
+
+	compute_pipeline_create_info := vk.ComputePipelineCreateInfo {
+		sType  = .COMPUTE_PIPELINE_CREATE_INFO,
+		layout = _ctx.gradient_pipeline_layout,
+		stage  = stage_info,
+	}
+
+	vk.CreateComputePipelines(
+		_ctx.device.ptr,
+		0,
+		1,
+		&compute_pipeline_create_info,
+		nil,
+		&_ctx.gradient_pipeline,
+	) or_return
+
+	deletion_queue_push_proc(&_ctx.deletors, proc() {
+		vk.DestroyPipelineLayout(_ctx.device.ptr, _ctx.gradient_pipeline_layout, nil)
+		vk.DestroyPipeline(_ctx.device.ptr, _ctx.gradient_pipeline, nil)
+	})
+
+	return
+}
+
 engine_destroy_swapchain :: proc() {
 	vkb.swapchain_destroy_image_views(_ctx.swapchain, &_ctx.swapchain_image_views)
 	delete(_ctx.swapchain_image_views)
@@ -371,17 +492,41 @@ engine_cleanup :: proc() {
 }
 
 engine_draw_background :: proc(cmd: vk.CommandBuffer) {
-	// Make a clear-color from frame number. This will flash with a 120 frame period.
-	clear_value: vk.ClearColorValue
-	flash := math.abs(math.sin(f32(_ctx.frame_number / 120.0)))
-	clear_value = {
-		float32 = {0.0, 0.0, flash, 1.0},
-	}
+	// // Make a clear-color from frame number. This will flash with a 120 frame period.
+	// clear_value: vk.ClearColorValue
+	// flash := math.abs(math.sin(f32(_ctx.frame_number / 120.0)))
+	// clear_value = {
+	// 	float32 = {0.0, 0.0, flash, 1.0},
+	// }
 
-	clear_range := image_subresource_range({.COLOR})
+	// clear_range := image_subresource_range({.COLOR})
 
-	//clear image
-	vk.CmdClearColorImage(cmd, _ctx.draw_image.image, .GENERAL, &clear_value, 1, &clear_range)
+	// //clear image
+	// vk.CmdClearColorImage(cmd, _ctx.draw_image.image, .GENERAL, &clear_value, 1, &clear_range)
+
+	// Bind the gradient drawing compute pipeline
+	vk.CmdBindPipeline(cmd, .COMPUTE, _ctx.gradient_pipeline)
+
+	// Bind the descriptor set containing the draw image for the compute pipeline
+	vk.CmdBindDescriptorSets(
+		cmd,
+		.COMPUTE,
+		_ctx.gradient_pipeline_layout,
+		0,
+		1,
+		&_ctx.draw_image_descriptors,
+		0,
+		nil,
+	)
+
+	// Execute the compute pipeline dispatch.
+	// We are using 16x16 workgroup size so we need to divide by it
+	vk.CmdDispatch(
+		cmd,
+		u32(math.ceil_f32(f32(_ctx.draw_extent.width) / 16.0)),
+		u32(math.ceil_f32(f32(_ctx.draw_extent.height) / 16.0)),
+		1,
+	)
 }
 
 // Draw loop
