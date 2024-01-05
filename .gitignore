@@ -1,8 +1,6 @@
 # Build
 
-/build/*
-!/build/assets/
-!/build/SDL2.dll
+build
 
 # Bin
 

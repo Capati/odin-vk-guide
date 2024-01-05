@@ -1,7 +1,13 @@
 package main
 
+// Core
+import "core:mem"
+
 // Libs
-import "libs:vk-bootstrap/vkb"
+import "libs:vkb"
+
+// Vendor
+import vk "vendor:vulkan"
 
 Window_Error :: enum {
 	None,
@@ -9,14 +15,9 @@ Window_Error :: enum {
 	Create_Window_Failed,
 }
 
-Vulkan_Error :: enum {
-	None,
-	Vulkan_Create_Error,
-	Vulkan_Allocate_Error,
-}
-
 Error :: union #shared_nil {
+	mem.Allocator_Error,
 	Window_Error,
 	vkb.Error,
-	Vulkan_Error,
+	vk.Result,
 }

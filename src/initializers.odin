@@ -34,87 +34,87 @@ command_buffer_allocate_info :: proc(
 	return
 }
 
-// //< init_cmd
-// //
-// //> init_cmd_draw
-// VkCommandBufferBeginInfo vkinit::command_buffer_begin_info(VkCommandBufferUsageFlags flags /*= 0*/)
-// {
-//     VkCommandBufferBeginInfo info = {};
-//     info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-//     info.pNext = nullptr;
+command_buffer_begin_info :: proc(
+	flags: vk.CommandBufferUsageFlags = {},
+) -> (
+	info: vk.CommandBufferBeginInfo,
+) {
+	info = vk.CommandBufferBeginInfo {
+		sType = .COMMAND_BUFFER_BEGIN_INFO,
+		flags = flags,
+	}
 
-//     info.pInheritanceInfo = nullptr;
-//     info.flags = flags;
-//     return info;
-// }
-// //< init_cmd_draw
+	return
+}
 
-// //> init_sync
-// VkFenceCreateInfo vkinit::fence_create_info(VkFenceCreateFlags flags /*= 0*/)
-// {
-//     VkFenceCreateInfo info = {};
-//     info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-//     info.pNext = nullptr;
+fence_create_info :: proc(flags: vk.FenceCreateFlags = {}) -> (info: vk.FenceCreateInfo) {
+	info = vk.FenceCreateInfo {
+		sType = .FENCE_CREATE_INFO,
+		flags = flags,
+	}
 
-//     info.flags = flags;
+	return
+}
 
-//     return info;
-// }
+semaphore_create_info :: proc(
+	flags: vk.SemaphoreCreateFlags = {},
+) -> (
+	info: vk.SemaphoreCreateInfo,
+) {
+	info = vk.SemaphoreCreateInfo {
+		sType = .SEMAPHORE_CREATE_INFO,
+		flags = flags,
+	}
 
-// VkSemaphoreCreateInfo vkinit::semaphore_create_info(VkSemaphoreCreateFlags flags /*= 0*/)
-// {
-//     VkSemaphoreCreateInfo info = {};
-//     info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-//     info.pNext = nullptr;
-//     info.flags = flags;
-//     return info;
-// }
-// //< init_sync
+	return
+}
 
-// //> init_submit
-// VkSemaphoreSubmitInfo vkinit::semaphore_submit_info(VkPipelineStageFlags2 stageMask, VkSemaphore semaphore)
-// {
-// 	VkSemaphoreSubmitInfo submitInfo{};
-// 	submitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-// 	submitInfo.pNext = nullptr;
-// 	submitInfo.semaphore = semaphore;
-// 	submitInfo.stageMask = stageMask;
-// 	submitInfo.deviceIndex = 0;
-// 	submitInfo.value = 1;
+semaphore_submit_info :: proc(
+	stage_mask: vk.PipelineStageFlags2,
+	semaphore: vk.Semaphore,
+) -> (
+	info: vk.SemaphoreSubmitInfo,
+) {
+	info = vk.SemaphoreSubmitInfo {
+		sType       = .SEMAPHORE_SUBMIT_INFO,
+		semaphore   = semaphore,
+		stageMask   = stage_mask,
+		deviceIndex = 0,
+		value       = 1,
+	}
 
-// 	return submitInfo;
-// }
+	return
+}
 
-// VkCommandBufferSubmitInfo vkinit::command_buffer_submit_info(VkCommandBuffer cmd)
-// {
-// 	VkCommandBufferSubmitInfo info{};
-// 	info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-// 	info.pNext = nullptr;
-// 	info.commandBuffer = cmd;
-// 	info.deviceMask = 0;
+command_buffer_submit_info :: proc(cmd: vk.CommandBuffer) -> (info: vk.CommandBufferSubmitInfo) {
+	info = vk.CommandBufferSubmitInfo {
+		sType         = .COMMAND_BUFFER_SUBMIT_INFO,
+		commandBuffer = cmd,
+		deviceMask    = 0,
+	}
 
-// 	return info;
-// }
+	return info
+}
 
-// VkSubmitInfo2 vkinit::submit_info(VkCommandBufferSubmitInfo* cmd, VkSemaphoreSubmitInfo* signalSemaphoreInfo,
-//     VkSemaphoreSubmitInfo* waitSemaphoreInfo)
-// {
-//     VkSubmitInfo2 info = {};
-//     info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-//     info.pNext = nullptr;
+submit_info :: proc(
+	cmd: ^vk.CommandBufferSubmitInfo,
+	signal_semaphore_info: ^vk.SemaphoreSubmitInfo,
+	wait_semaphore_info: ^vk.SemaphoreSubmitInfo,
+) -> (
+	info: vk.SubmitInfo2,
+) {
+	info = vk.SubmitInfo2 {
+		sType                    = .SUBMIT_INFO_2,
+		waitSemaphoreInfoCount   = wait_semaphore_info == nil ? 0 : 1,
+		pWaitSemaphoreInfos      = wait_semaphore_info,
+		signalSemaphoreInfoCount = signal_semaphore_info == nil ? 0 : 1,
+		pSignalSemaphoreInfos    = signal_semaphore_info,
+		commandBufferInfoCount   = 1,
+		pCommandBufferInfos      = cmd,
+	}
 
-//     info.waitSemaphoreInfoCount = waitSemaphoreInfo == nullptr ? 0 : 1;
-//     info.pWaitSemaphoreInfos = waitSemaphoreInfo;
-
-//     info.signalSemaphoreInfoCount = signalSemaphoreInfo == nullptr ? 0 : 1;
-//     info.pSignalSemaphoreInfos = signalSemaphoreInfo;
-
-//     info.commandBufferInfoCount = 1;
-//     info.pCommandBufferInfos = cmd;
-
-//     return info;
-// }
-// //< init_submit
+	return info
+}
 
 // VkPresentInfoKHR vkinit::present_info()
 // {
@@ -186,19 +186,22 @@ command_buffer_allocate_info :: proc(
 // }
 // //< render_info
 // //> subresource
-// VkImageSubresourceRange vkinit::image_subresource_range(VkImageAspectFlags aspectMask)
-// {
-//     VkImageSubresourceRange subImage {};
-//     subImage.aspectMask = aspectMask;
-//     subImage.baseMipLevel = 0;
-//     subImage.levelCount = VK_REMAINING_MIP_LEVELS;
-//     subImage.baseArrayLayer = 0;
-//     subImage.layerCount = VK_REMAINING_ARRAY_LAYERS;
 
-//     return subImage;
-// }
-// //< subresource
+image_subresource_range :: proc(
+	aspect_mask: vk.ImageAspectFlags,
+) -> (
+	info: vk.ImageSubresourceRange,
+) {
+	info = vk.ImageSubresourceRange {
+		aspectMask     = aspect_mask,
+		baseMipLevel   = 0,
+		levelCount     = vk.REMAINING_MIP_LEVELS,
+		baseArrayLayer = 0,
+		layerCount     = vk.REMAINING_ARRAY_LAYERS,
+	}
 
+	return
+}
 
 // VkDescriptorSetLayoutBinding vkinit::descriptorset_layout_binding(VkDescriptorType type, VkShaderStageFlags stageFlags,
 //     uint32_t binding)
@@ -268,50 +271,55 @@ command_buffer_allocate_info :: proc(
 //     return binfo;
 // }
 
-// //> image_set
-// VkImageCreateInfo vkinit::image_create_info(VkFormat format, VkImageUsageFlags usageFlags, VkExtent3D extent)
-// {
-//     VkImageCreateInfo info = {};
-//     info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-//     info.pNext = nullptr;
+image_create_info :: proc(
+	format: vk.Format,
+	usage_flags: vk.ImageUsageFlags,
+	extent: vk.Extent3D,
+) -> (
+	info: vk.ImageCreateInfo,
+) {
+	info = vk.ImageCreateInfo {
+		sType = .IMAGE_CREATE_INFO,
+		imageType = .D2,
+		format = format,
+		extent = extent,
+		mipLevels = 1,
+		arrayLayers = 1,
+		// For MSAA. we will not be using it by default, so default it to 1 sample per pixel.
+		samples = {._1},
+		// Optimal tiling, which means the image is stored on the best gpu format
+		tiling = .OPTIMAL,
+		usage = usage_flags,
+	}
 
-//     info.imageType = VK_IMAGE_TYPE_2D;
+	return
+}
 
-//     info.format = format;
-//     info.extent = extent;
+imageview_create_info :: proc(
+	format: vk.Format,
+	image: vk.Image,
+	aspect_flags: vk.ImageAspectFlags,
+) -> (
+	info: vk.ImageViewCreateInfo,
+) {
+	// Build a image-view for the depth image to use for rendering
+	info = vk.ImageViewCreateInfo {
+		sType = .IMAGE_VIEW_CREATE_INFO,
+		viewType = .D2,
+		image = image,
+		format = format,
+		subresourceRange =  {
+			baseMipLevel = 0,
+			levelCount = 1,
+			baseArrayLayer = 0,
+			layerCount = 1,
+			aspectMask = aspect_flags,
+		},
+	}
 
-//     info.mipLevels = 1;
-//     info.arrayLayers = 1;
+	return
+}
 
-//     //for MSAA. we will not be using it by default, so default it to 1 sample per pixel.
-//     info.samples = VK_SAMPLE_COUNT_1_BIT;
-
-//     //optimal tiling, which means the image is stored on the best gpu format
-//     info.tiling = VK_IMAGE_TILING_OPTIMAL;
-//     info.usage = usageFlags;
-
-//     return info;
-// }
-
-// VkImageViewCreateInfo vkinit::imageview_create_info(VkFormat format, VkImage image, VkImageAspectFlags aspectFlags)
-// {
-//     // build a image-view for the depth image to use for rendering
-//     VkImageViewCreateInfo info = {};
-//     info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-//     info.pNext = nullptr;
-
-//     info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-//     info.image = image;
-//     info.format = format;
-//     info.subresourceRange.baseMipLevel = 0;
-//     info.subresourceRange.levelCount = 1;
-//     info.subresourceRange.baseArrayLayer = 0;
-//     info.subresourceRange.layerCount = 1;
-//     info.subresourceRange.aspectMask = aspectFlags;
-
-//     return info;
-// }
-// //< image_set
 // VkPipelineLayoutCreateInfo vkinit::pipeline_layout_create_info()
 // {
 //     VkPipelineLayoutCreateInfo info {};
