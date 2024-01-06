@@ -79,26 +79,34 @@ engine_init :: proc() -> (err: Error) {
 		log.errorf("Failed to create the window: [%s]", sdl.GetError())
 		return .Create_Window_Failed
 	}
+	defer if err != nil do sdl.DestroyWindow(_ctx.window)
 
 	if res := engine_init_vulkan(); res != nil {
 		log.errorf("Failed to initialize Vulkan: [%v]", res)
 		return res
+	}
+	defer if err != nil {
+		engine_flush_deletors()
+		engine_deinit_vulkan()
 	}
 
 	if res := engine_init_swapchain(); res != nil {
 		log.errorf("Failed to initialize Swapchain: [%v]", res)
 		return res
 	}
+	defer if err != nil do engine_destroy_swapchain()
 
 	if res := engine_init_commands(); res != nil {
 		log.errorf("Failed to initialize commands: [%v]", res)
 		return res
 	}
+	defer if err != nil do engine_deinit_commands()
 
 	if res := engine_init_sync_structures(); res != nil {
 		log.errorf("Failed to initialize sync structures: [%v]", res)
 		return res
 	}
+	defer if err != nil do engine_deinit_sync_structures()
 
 	if res := engine_init_descriptors(); res != nil {
 		log.errorf("Failed to initialize descriptors: [%v]", res)
@@ -112,7 +120,7 @@ engine_init :: proc() -> (err: Error) {
 
 	when ODIN_DEBUG {
 		if res := engine_init_imgui(); res != nil {
-			log.errorf("Failed to initialize imgui: [%v]", res)
+			log.errorf("Failed to initialize ImGui: [%v]", res)
 			return res
 		}
 	}
@@ -603,6 +611,49 @@ engine_init_background_pipelines :: proc() -> (err: Error) {
 	return
 }
 
+// Shuts down the engine
+engine_cleanup :: proc() {
+	if _ctx.is_initialized {
+		// Make sure the gpu has stopped doing its things
+		vk.DeviceWaitIdle(_ctx.device.ptr)
+
+		engine_flush_deletors()
+
+		engine_deinit_commands()
+
+		engine_deinit_sync_structures()
+
+		engine_destroy_swapchain()
+
+		engine_deinit_vulkan()
+
+		sdl.DestroyWindow(_ctx.window)
+		sdl.Quit()
+	}
+}
+
+engine_flush_deletors :: proc() {
+	deletion_queue_flush(&_ctx.deletors)
+	queue.destroy(&_ctx.deletors)
+	for i in 0 ..< FRAME_OVERLAP {
+		queue.destroy(&_ctx.frames[i].deletors)
+	}
+}
+
+engine_deinit_commands :: proc() {
+	for i in 0 ..< FRAME_OVERLAP {
+		vk.DestroyCommandPool(_ctx.device.ptr, _ctx.frames[i].command_pool, nil)
+	}
+}
+
+engine_deinit_sync_structures :: proc() {
+	for i in 0 ..< FRAME_OVERLAP {
+		vk.DestroySemaphore(_ctx.device.ptr, _ctx.frames[i].swapchain_semaphore, nil)
+		vk.DestroySemaphore(_ctx.device.ptr, _ctx.frames[i].render_semaphore, nil)
+		vk.DestroyFence(_ctx.device.ptr, _ctx.frames[i].render_fence, nil)
+	}
+}
+
 engine_destroy_swapchain :: proc() {
 	vkb.swapchain_destroy_image_views(_ctx.swapchain, &_ctx.swapchain_image_views)
 	delete(_ctx.swapchain_image_views)
@@ -610,35 +661,11 @@ engine_destroy_swapchain :: proc() {
 	vkb.destroy_swapchain(_ctx.swapchain)
 }
 
-// Shuts down the engine
-engine_cleanup :: proc() {
-	if _ctx.is_initialized {
-		// Make sure the gpu has stopped doing its things
-		vk.DeviceWaitIdle(_ctx.device.ptr)
-
-		deletion_queue_flush(&_ctx.deletors)
-		queue.destroy(&_ctx.deletors)
-		for i in 0 ..< FRAME_OVERLAP {
-			queue.destroy(&_ctx.frames[i].deletors)
-		}
-
-		for i in 0 ..< FRAME_OVERLAP {
-			vk.DestroyCommandPool(_ctx.device.ptr, _ctx.frames[i].command_pool, nil)
-			vk.DestroySemaphore(_ctx.device.ptr, _ctx.frames[i].swapchain_semaphore, nil)
-			vk.DestroySemaphore(_ctx.device.ptr, _ctx.frames[i].render_semaphore, nil)
-			vk.DestroyFence(_ctx.device.ptr, _ctx.frames[i].render_fence, nil)
-		}
-
-		engine_destroy_swapchain()
-
-		vkb.destroy_device(_ctx.device)
-		vkb.destroy_physical_device(_ctx.chosen_gpu)
-		vkb.destroy_surface(_ctx.instance, _ctx.surface)
-		vkb.destroy_instance(_ctx.instance)
-
-		sdl.DestroyWindow(_ctx.window)
-		sdl.Quit()
-	}
+engine_deinit_vulkan :: proc() {
+	vkb.destroy_device(_ctx.device)
+	vkb.destroy_physical_device(_ctx.chosen_gpu)
+	vkb.destroy_surface(_ctx.instance, _ctx.surface)
+	vkb.destroy_instance(_ctx.instance)
 }
 
 engine_draw_background :: proc(cmd: vk.CommandBuffer) {
