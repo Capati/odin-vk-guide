@@ -11,6 +11,9 @@ import sdl "vendor:sdl2"
 import vk "vendor:vulkan"
 
 // Libs
+import "libs:imgui"
+import imgui_sdl2 "libs:imgui/imgui_impl_sdl2"
+import imgui_vk "libs:imgui/imgui_impl_vulkan"
 import "libs:vkb"
 import "libs:vma"
 
@@ -40,6 +43,11 @@ Engine :: struct {
 	draw_image_descriptor_layout: vk.DescriptorSetLayout,
 	gradient_pipeline:            vk.Pipeline,
 	gradient_pipeline_layout:     vk.PipelineLayout,
+	// immediate submit structures
+	imm_fence:                    vk.Fence,
+	imm_command_buffer:           vk.CommandBuffer,
+	imm_command_pool:             vk.CommandPool,
+	imm_pool:                     vk.DescriptorPool,
 }
 
 @(private)
@@ -100,6 +108,13 @@ engine_init :: proc() -> (err: Error) {
 	if res := engine_init_pipelines(); res != nil {
 		log.errorf("Failed to initialize pipelines: [%v]", res)
 		return res
+	}
+
+	when ODIN_DEBUG {
+		if res := engine_init_imgui(); res != nil {
+			log.errorf("Failed to initialize imgui: [%v]", res)
+			return res
+		}
 	}
 
 	// everything went fine
@@ -310,6 +325,28 @@ engine_init_commands :: proc() -> (err: Error) {
 		) or_return
 	}
 
+	when ODIN_DEBUG {
+		vk.CreateCommandPool(
+			_ctx.device.ptr,
+			&command_pool_info,
+			nil,
+			&_ctx.imm_command_pool,
+		) or_return
+
+		// Allocate the command buffer for immediate submits
+		cmd_alloc_info := command_buffer_allocate_info(_ctx.imm_command_pool, 1)
+
+		vk.AllocateCommandBuffers(
+			_ctx.device.ptr,
+			&cmd_alloc_info,
+			&_ctx.imm_command_buffer,
+		) or_return
+
+		deletion_queue_push_proc(&_ctx.deletors, proc() {
+			vk.DestroyCommandPool(_ctx.device.ptr, _ctx.imm_command_pool, nil)
+		})
+	}
+
 	return
 }
 
@@ -343,6 +380,41 @@ engine_init_sync_structures :: proc() -> (err: Error) {
 			&_ctx.frames[i].render_semaphore,
 		) or_return
 	}
+
+	when ODIN_DEBUG {
+		vk.CreateFence(_ctx.device.ptr, &fence_create_info, nil, &_ctx.imm_fence) or_return
+
+		deletion_queue_push_proc(&_ctx.deletors, proc() {
+			vk.DestroyFence(_ctx.device.ptr, _ctx.imm_fence, nil)
+		})
+	}
+
+	return
+}
+
+engine_immediate_submit :: proc(f: proc(cmd: vk.CommandBuffer)) -> (err: Error) {
+	vk.ResetFences(_ctx.device.ptr, 1, &_ctx.imm_fence) or_return
+	vk.ResetCommandBuffer(_ctx.imm_command_buffer, {}) or_return
+
+	cmd := _ctx.imm_command_buffer
+
+	cmd_begin_info := command_buffer_begin_info({.ONE_TIME_SUBMIT})
+
+	vk.BeginCommandBuffer(cmd, &cmd_begin_info) or_return
+
+	f(cmd)
+
+	vk.EndCommandBuffer(cmd) or_return
+
+	cmd_info := command_buffer_submit_info(cmd)
+
+	submit := submit_info(&cmd_info, nil, nil)
+
+	// submit command buffer to the queue and execute it.
+	//  render_fence will now block until the graphic commands finish execution
+	vk.QueueSubmit2(_ctx.graphics_queue, 1, &submit, _ctx.imm_fence) or_return
+
+	vk.WaitForFences(_ctx.device.ptr, 1, &_ctx.imm_fence, true, 9999999999)
 
 	return
 }
@@ -400,6 +472,84 @@ engine_init_descriptors :: proc() -> (err: Error) {
 
 engine_init_pipelines :: proc() -> (err: Error) {
 	engine_init_background_pipelines() or_return
+	return
+}
+
+engine_init_imgui :: proc() -> (err: Error) {
+	// 1: create descriptor pool for IMGUI
+	//  the size of the pool is very oversize, but it's copied from imgui demo
+	//  itself.
+	pool_sizes := []vk.DescriptorPoolSize {
+		{.SAMPLER, 1000},
+		{.COMBINED_IMAGE_SAMPLER, 1000},
+		{.SAMPLED_IMAGE, 1000},
+		{.STORAGE_IMAGE, 1000},
+		{.UNIFORM_TEXEL_BUFFER, 1000},
+		{.STORAGE_TEXEL_BUFFER, 1000},
+		{.UNIFORM_BUFFER, 1000},
+		{.STORAGE_BUFFER, 1000},
+		{.UNIFORM_BUFFER_DYNAMIC, 1000},
+		{.STORAGE_BUFFER_DYNAMIC, 1000},
+		{.INPUT_ATTACHMENT, 1000},
+	}
+
+	pool_info := vk.DescriptorPoolCreateInfo {
+		sType = .DESCRIPTOR_POOL_CREATE_INFO,
+		flags = {.FREE_DESCRIPTOR_SET},
+		maxSets = 1000,
+		poolSizeCount = u32(len(pool_sizes)),
+		pPoolSizes = raw_data(pool_sizes),
+	}
+
+	vk.CreateDescriptorPool(_ctx.device.ptr, &pool_info, nil, &_ctx.imm_pool) or_return
+
+	// This initializes the core structures of imgui
+	imgui.CreateContext(nil)
+
+	// This initializes imgui for SDL
+	if !imgui_sdl2.InitForVulkan(_ctx.window) {
+		log.error("Failed to initialize ImGui SDL2 for Vulkan")
+		return .ImGui_Failed
+	}
+
+	// This initializes imgui for Vulkan
+	init_info := imgui_vk.InitInfo {
+		Instance = _ctx.instance.ptr,
+		PhysicalDevice = _ctx.chosen_gpu.ptr,
+		Device = _ctx.device.ptr,
+		Queue = _ctx.graphics_queue,
+		DescriptorPool = _ctx.imm_pool,
+		MinImageCount = 3,
+		ImageCount = 3,
+		UseDynamicRendering = true,
+		ColorAttachmentFormat = _ctx.swapchain.image_format,
+		MSAASamples = {._1},
+	}
+
+	imgui_vk.LoadFunctions(
+		proc "c" (function_name: cstring, user_data: rawptr) -> vk.ProcVoidFunction {
+			return vk.GetInstanceProcAddr(_ctx.instance.ptr, function_name)
+		},
+	)
+
+	if !imgui_vk.Init(&init_info, 0) {
+		log.error("Failed to initialize ImGui for Vulkan")
+		return .ImGui_Failed
+	}
+
+	// execute a gpu command to upload imgui font textures
+	engine_immediate_submit(proc(cmd: vk.CommandBuffer) {
+		imgui_vk.CreateFontsTexture(cmd)
+	})
+
+	// clear font textures from cpu data
+	imgui_vk.DestroyFontUploadObjects()
+
+	deletion_queue_push_proc(&_ctx.deletors, proc() {
+		vk.DestroyDescriptorPool(_ctx.device.ptr, _ctx.imm_pool, nil)
+		imgui_vk.Shutdown()
+	})
+
 	return
 }
 
@@ -529,6 +679,19 @@ engine_draw_background :: proc(cmd: vk.CommandBuffer) {
 	)
 }
 
+engine_draw_imgui :: proc(cmd: vk.CommandBuffer, target_view: vk.ImageView) -> (err: Error) {
+	color_attachment := attachment_info(target_view, nil, .GENERAL)
+	render_info := rendering_info(_ctx.swapchain.extent, &color_attachment, nil)
+
+	vk.CmdBeginRendering(cmd, &render_info)
+
+	imgui_vk.RenderDrawData(imgui.GetDrawData(), cmd)
+
+	vk.CmdEndRendering(cmd)
+
+	return
+}
+
 // Draw loop
 engine_draw :: proc() -> (err: Error) {
 	frame := engine_get_current_frame()
@@ -582,7 +745,7 @@ engine_draw :: proc() -> (err: Error) {
 	transition_image(cmd, _ctx.draw_image.image, .GENERAL, .TRANSFER_SRC_OPTIMAL)
 	transition_image(cmd, _ctx.swapchain_images[image_index], .UNDEFINED, .TRANSFER_DST_OPTIMAL)
 
-	// Execute a copy from the draw image into the swapchain
+	// execute a copy from the draw image into the swapchain
 	copy_image_to_image(
 		cmd,
 		_ctx.draw_image.image,
@@ -591,15 +754,26 @@ engine_draw :: proc() -> (err: Error) {
 		_ctx.swapchain.extent,
 	)
 
-	// set swapchain image layout to Present so we can show it on the screen
+	// set swapchain image layout to Attachment Optimal so we can draw it
 	transition_image(
 		cmd,
 		_ctx.swapchain_images[image_index],
 		.TRANSFER_DST_OPTIMAL,
+		.COLOR_ATTACHMENT_OPTIMAL,
+	)
+
+	//draw imgui into the swapchain image
+	engine_draw_imgui(cmd, _ctx.swapchain_image_views[image_index])
+
+	// set swapchain image layout to Present so we can draw it
+	transition_image(
+		cmd,
+		_ctx.swapchain_images[image_index],
+		.COLOR_ATTACHMENT_OPTIMAL,
 		.PRESENT_SRC_KHR,
 	)
 
-	// Finalize the command buffer (we can no longer add commands, but it can now be executed)
+	//finalize the command buffer (we can no longer add commands, but it can now be executed)
 	vk.EndCommandBuffer(cmd) or_return
 
 	// Prepare the submission to the queue.
@@ -657,6 +831,10 @@ engine_run :: proc() {
 					_ctx.stop_rendering = false
 				}
 			}
+
+			when ODIN_DEBUG {
+				imgui_sdl2.ProcessEvent(&e)
+			}
 		}
 
 		// do not draw if we are minimized
@@ -664,6 +842,19 @@ engine_run :: proc() {
 			// throttle the speed to avoid the endless spinning
 			time.sleep(100 * time.Millisecond)
 			continue main_loop
+		}
+
+		when ODIN_DEBUG {
+			imgui_vk.NewFrame()
+			imgui_sdl2.NewFrame()
+			imgui.NewFrame()
+
+			//some imgui UI to test
+			open := true
+			imgui.ShowDemoWindow(&open)
+
+			//make imgui calculate internal draw structures
+			imgui.Render()
 		}
 
 		if res := engine_draw(); res != nil {

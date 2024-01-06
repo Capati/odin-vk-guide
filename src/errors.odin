@@ -13,6 +13,7 @@ Window_Error :: enum {
 	None,
 	SDL_Init_Failed,
 	Create_Window_Failed,
+	ImGui_Failed,
 }
 
 OS_Error :: enum {
