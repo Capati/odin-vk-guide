@@ -9,6 +9,7 @@ Separate sections with branches.
 ## Progress
 
 - [x] 1. Initializing Vulkan
+
   - [x] Vulkan Initialization
   - [x] Vulkan Initialization Code
   - [x] Executing Vulkan Commands
@@ -19,6 +20,7 @@ Separate sections with branches.
 ![image info](./docs/section-1.jpg)
 
 - [x] 2. Drawing with Compute
+
   - [x] Improving the render loop
   - [x] Vulkan Shaders
   - [x] Vulkan Shaders - Code
@@ -28,6 +30,7 @@ Separate sections with branches.
 ![image info](./docs/section-2.jpg)
 
 - [ ] 3. Graphics Pipelines
+
   - [ ] The graphics pipeline
   - [ ] Setting up render pipeline
   - [ ] Mesh buffers
@@ -36,6 +39,7 @@ Separate sections with branches.
   - [ ] Window Resizing
 
 - [ ] 4. Textures and Engine Architecture
+
   - [ ] Descriptor Abstractions
   - [ ] Textures
   - [ ] Engine Architecture
@@ -43,6 +47,7 @@ Separate sections with branches.
   - [ ] Meshes and Camera
 
 - [ ] 5. GLTF loading
+
   - [ ] Interactive Camera
   - [ ] GLTF Scene Nodes
   - [ ] GLTF Textures
