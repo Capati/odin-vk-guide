@@ -7,7 +7,8 @@ import "core:c"
 import vk "vendor:vulkan"
 
 when ODIN_OS == .Windows {
-	foreign import vma {"./lib/vma.lib", "system:MSVCRT.lib", "system:libcmt.lib"}
+	// @(extra_linker_flags="/NODEFAULTLIB:libcmt")
+	foreign import vma {"./lib/vma.lib", "system:msvcrt.lib", "system:libcmt.lib"}
 } else when ODIN_OS == .Darwin {
 	// TODO(Capati): no mac/os libs yet!
 } else when ODIN_OS == .Linux {
