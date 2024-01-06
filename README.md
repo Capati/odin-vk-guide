@@ -1,6 +1,6 @@
-# Vulkan Guide Tutorial 2.0
+# Odin Vulkan Guide Tutorial 2.0
 
-In progress tutorial using Odin Language.
+In progress tutorial of [vkguide.dev](https://vkguide.dev/) using Odin Language.
 
 ## TODO
 
