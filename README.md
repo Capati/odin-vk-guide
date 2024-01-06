@@ -16,7 +16,7 @@ Separate sections with branches.
   - [x] Rendering Loop
   - [x] Mainloop Code
 
-- [x] 2. Drawing with Compute
+- [ ] 2. Drawing with Compute
   - [x] Improving the render loop
   - [x] Vulkan Shaders
   - [x] Vulkan Shaders - Code
