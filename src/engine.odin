@@ -11,11 +11,13 @@ import sdl "vendor:sdl2"
 import vk "vendor:vulkan"
 
 // Libs
+import "libs:vkb"
+import "libs:vma"
+
+// Debug Libs
 import "libs:imgui"
 import imgui_sdl2 "libs:imgui/imgui_impl_sdl2"
 import imgui_vk "libs:imgui/imgui_impl_vulkan"
-import "libs:vkb"
-import "libs:vma"
 
 Engine :: struct {
 	is_initialized:               bool,
@@ -48,6 +50,8 @@ Engine :: struct {
 	imm_command_buffer:           vk.CommandBuffer,
 	imm_command_pool:             vk.CommandPool,
 	imm_pool:                     vk.DescriptorPool,
+	background_effects:           [2]Compute_Effect,
+	current_background_effect:    i32,
 }
 
 @(private)
@@ -125,7 +129,7 @@ engine_init :: proc() -> (err: Error) {
 		}
 	}
 
-	// everything went fine
+	// Everything went fine
 	_ctx.is_initialized = true
 
 	return
@@ -333,6 +337,7 @@ engine_init_commands :: proc() -> (err: Error) {
 		) or_return
 	}
 
+	// For ImGui
 	when ODIN_DEBUG {
 		vk.CreateCommandPool(
 			_ctx.device.ptr,
@@ -479,7 +484,100 @@ engine_init_descriptors :: proc() -> (err: Error) {
 }
 
 engine_init_pipelines :: proc() -> (err: Error) {
-	engine_init_background_pipelines() or_return
+	// engine_init_background_pipelines() or_return
+	push_constants := vk.PushConstantRange {
+		offset = 0,
+		size = size_of(Compute_Push_Constants),
+		stageFlags = {.COMPUTE},
+	}
+
+	compute_layout := vk.PipelineLayoutCreateInfo {
+		sType                  = .PIPELINE_LAYOUT_CREATE_INFO,
+		pSetLayouts            = &_ctx.draw_image_descriptor_layout,
+		setLayoutCount         = 1,
+		pPushConstantRanges    = &push_constants,
+		pushConstantRangeCount = 1,
+	}
+
+	vk.CreatePipelineLayout(
+		_ctx.device.ptr,
+		&compute_layout,
+		nil,
+		&_ctx.gradient_pipeline_layout,
+	) or_return
+	defer if err != nil {
+		vk.DestroyPipelineLayout(_ctx.device.ptr, _ctx.gradient_pipeline_layout, nil)
+	}
+
+	gradient_shader := load_shader_module(
+		"../src/shaders/gradient_color.spv",
+		_ctx.device,
+	) or_return
+	defer vk.DestroyShaderModule(_ctx.device.ptr, gradient_shader, nil)
+
+	sky_shader := load_shader_module("../src/shaders/sky.spv", _ctx.device) or_return
+	defer vk.DestroyShaderModule(_ctx.device.ptr, sky_shader, nil)
+
+	stage_info := vk.PipelineShaderStageCreateInfo {
+		sType = .PIPELINE_SHADER_STAGE_CREATE_INFO,
+		stage = {.COMPUTE},
+		module = gradient_shader,
+		pName = "main",
+	}
+
+	compute_pipeline_create_info := vk.ComputePipelineCreateInfo {
+		sType  = .COMPUTE_PIPELINE_CREATE_INFO,
+		layout = _ctx.gradient_pipeline_layout,
+		stage  = stage_info,
+	}
+
+	gradient := Compute_Effect {
+		layout = _ctx.gradient_pipeline_layout,
+		name = "gradient",
+		data = {},
+	}
+
+	//default colors
+	gradient.data.data1 = {1, 0, 0, 1}
+	gradient.data.data2 = {0, 0, 1, 1}
+
+	vk.CreateComputePipelines(
+		_ctx.device.ptr,
+		0,
+		1,
+		&compute_pipeline_create_info,
+		nil,
+		&gradient.pipeline,
+	) or_return
+
+	// Change the shader module only to create the sky shader
+	compute_pipeline_create_info.stage.module = sky_shader
+
+	sky := Compute_Effect {
+		layout = _ctx.gradient_pipeline_layout,
+		name = "sky",
+		data = {data1 = {0.1, 0.2, 0.4, 0.97}},
+	}
+
+	vk.CreateComputePipelines(
+		_ctx.device.ptr,
+		0,
+		1,
+		&compute_pipeline_create_info,
+		nil,
+		&sky.pipeline,
+	) or_return
+
+	// add the 2 background effects into the array
+	_ctx.background_effects[0] = gradient
+	_ctx.background_effects[1] = sky
+
+	deletion_queue_push_proc(&_ctx.deletors, proc() {
+		vk.DestroyPipelineLayout(_ctx.device.ptr, _ctx.gradient_pipeline_layout, nil)
+		vk.DestroyPipeline(_ctx.device.ptr, _ctx.background_effects[0].pipeline, nil)
+		vk.DestroyPipeline(_ctx.device.ptr, _ctx.background_effects[1].pipeline, nil)
+	})
+
 	return
 }
 
@@ -681,8 +779,10 @@ engine_draw_background :: proc(cmd: vk.CommandBuffer) {
 	// //clear image
 	// vk.CmdClearColorImage(cmd, _ctx.draw_image.image, .GENERAL, &clear_value, 1, &clear_range)
 
+	effect := _ctx.background_effects[_ctx.current_background_effect]
+
 	// Bind the gradient drawing compute pipeline
-	vk.CmdBindPipeline(cmd, .COMPUTE, _ctx.gradient_pipeline)
+	vk.CmdBindPipeline(cmd, .COMPUTE, effect.pipeline)
 
 	// Bind the descriptor set containing the draw image for the compute pipeline
 	vk.CmdBindDescriptorSets(
@@ -694,6 +794,15 @@ engine_draw_background :: proc(cmd: vk.CommandBuffer) {
 		&_ctx.draw_image_descriptors,
 		0,
 		nil,
+	)
+
+	vk.CmdPushConstants(
+		cmd,
+		_ctx.gradient_pipeline_layout,
+		{.COMPUTE},
+		0,
+		size_of(Compute_Push_Constants),
+		&effect.data,
 	)
 
 	// Execute the compute pipeline dispatch.
@@ -789,8 +898,10 @@ engine_draw :: proc() -> (err: Error) {
 		.COLOR_ATTACHMENT_OPTIMAL,
 	)
 
-	//draw imgui into the swapchain image
-	engine_draw_imgui(cmd, _ctx.swapchain_image_views[image_index])
+	when ODIN_DEBUG {
+		// Draw imgui into the swapchain image
+		engine_draw_imgui(cmd, _ctx.swapchain_image_views[image_index])
+	}
 
 	// set swapchain image layout to Present so we can draw it
 	transition_image(
@@ -876,9 +987,28 @@ engine_run :: proc() {
 			imgui_sdl2.NewFrame()
 			imgui.NewFrame()
 
-			//some imgui UI to test
+			// imgui.ShowDemoWindow(&open)
+
 			open := true
-			imgui.ShowDemoWindow(&open)
+			if imgui.Begin("Background", &open, {.AlwaysAutoResize}) {
+				selected := &_ctx.background_effects[_ctx.current_background_effect]
+
+				imgui.Text("Selected effect: %s", selected.name)
+
+				imgui.SliderInt(
+					"Effect Index",
+					&_ctx.current_background_effect,
+					0,
+					len(_ctx.background_effects) - 1,
+				)
+
+				imgui.InputFloat4("data1", cast(^[4]f32)&selected.data.data1)
+				imgui.InputFloat4("data2", cast(^[4]f32)&selected.data.data2)
+				imgui.InputFloat4("data3", cast(^[4]f32)&selected.data.data3)
+				imgui.InputFloat4("data4", cast(^[4]f32)&selected.data.data4)
+
+				imgui.End()
+			}
 
 			//make imgui calculate internal draw structures
 			imgui.Render()

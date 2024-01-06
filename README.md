@@ -16,12 +16,14 @@ Separate sections with branches.
   - [x] Rendering Loop
   - [x] Mainloop Code
 
-- [ ] 2. Drawing with Compute
+- [x] 2. Drawing with Compute
   - [x] Improving the render loop
   - [x] Vulkan Shaders
   - [x] Vulkan Shaders - Code
   - [x] Setting up IMGUI
-  - [ ] Push Constants and new shaders
+  - [x] Push Constants and new shaders
+
+![image info](./docs/section-2.png)
 
 - [ ] 3. Graphics Pipelines
   - [ ] The graphics pipeline
