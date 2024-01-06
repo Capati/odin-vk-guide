@@ -11,7 +11,7 @@ when ODIN_OS == .Windows {
 } else when ODIN_OS == .Darwin {
 	// TODO(Capati): no mac/os libs yet!
 } else when ODIN_OS == .Linux {
-	foreign import vma "lib/libvma.a"
+	foreign import vma {"lib/libvma.a", "system:stdc++"}
 } else {
 	foreign import vma "system:vma"
 }
