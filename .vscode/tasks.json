@@ -52,7 +52,7 @@
             },
             "problemMatcher": []
         },
-		{
+        {
             "type": "shell",
             "label": "Release x86_64",
             "windows": {
@@ -65,7 +65,7 @@
                     "-no-bounds-check",
                     "-target:windows_amd64",
                     "-subsystem:windows",
-					"-collection:libs=./libs",
+                    "-collection:libs=./libs",
                     "-out:./build/engine.exe"
                 ]
             },
@@ -78,7 +78,7 @@
                     "-disable-assert",
                     "-no-bounds-check",
                     "-target:linux_amd64",
-					"-collection:libs=./libs",
+                    "-collection:libs=./libs",
                     "-out:./build/engine"
                 ]
             },
