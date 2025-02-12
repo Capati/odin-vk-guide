@@ -1,8 +1,0 @@
-examples/*.exe
-examples/*.bin
-examples/imgui.ini
-temp/
-imgui/
-dear_bindings/
-backend_deps/
-ols.json
