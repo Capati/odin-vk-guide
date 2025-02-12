@@ -1,6 +1,6 @@
 {
 	"$schema": "https://raw.githubusercontent.com/DanielGavin/ols/master/misc/ols.schema.json",
-	"collections": [{ "name": "root", "path": "./" }],
+	"collections": [{ "name": "libs", "path": "./libs" }],
 	"enable_checker_only_saved": true,
 	"enable_document_symbols": true,
 	"enable_fake_methods": true,
