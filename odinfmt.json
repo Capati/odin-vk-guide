@@ -1,6 +1,8 @@
 {
-    "character_width": 100,
-    "tabs": true,
-    "spaces": 4,
-    "tabs_width": 4
+	"$schema": "https://raw.githubusercontent.com/DanielGavin/ols/master/misc/odinfmt.schema.json",
+	"character_width": 100,
+	"tabs": true,
+	"spaces": 4,
+	"tabs_width": 4,
+	"newline_style": "LF"
 }

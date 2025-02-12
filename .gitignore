@@ -1,10 +1,32 @@
 # Build
 
 build
+/assets/**
+!.gitkeep
 
-# Bin
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
 
-*.o
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+*.obj
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
 
 # Sublime Text
 
@@ -12,7 +34,8 @@ build
 
 # vs code
 
-/.vscode/*.log
+.vscode
 
-# Odin
-ols.json
+# Mac
+
+**/.DS_Store
