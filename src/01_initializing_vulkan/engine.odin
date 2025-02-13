@@ -12,7 +12,6 @@ import vk "vendor:vulkan"
 
 // Local packages
 import "libs:vkb"
-import "libs:vma"
 
 FRAME_OVERLAP :: 2
 
@@ -56,9 +55,6 @@ Engine :: struct {
 		swapchain:       ^vkb.Swapchain,
 		device:          ^vkb.Device,
 	},
-
-	// Internal
-	vma_allocator:         vma.Allocator,
 }
 
 TITLE :: "01. Initializing Vulkan"
@@ -183,24 +179,6 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 	// use vk-bootstrap to get a Graphics queue
 	self.graphics_queue = vkb.device_get_queue(self.vkb.device, .Graphics) or_return
 	self.graphics_queue_family = vkb.device_get_queue_index(self.vkb.device, .Graphics) or_return
-
-	// Create the VMA (Vulkan Memory Allocator)
-	// Initializes a subset of Vulkan functions required by VMA
-	vma_vulkan_functions := vma.create_vulkan_functions()
-
-	allocator_create_info: vma.Allocator_Create_Info = {
-		flags              = {.Buffer_Device_Address},
-		instance           = self.vk_instance,
-		vulkan_api_version = vkb.convert_vulkan_to_vma_version(self.vkb.instance.api_version),
-		physical_device    = self.vk_physical_device,
-		device             = self.vk_device,
-		vulkan_functions   = &vma_vulkan_functions,
-	}
-
-	vk_check(
-		vma.create_allocator(allocator_create_info, &self.vma_allocator),
-		"Failed to Create Vulkan Memory Allocator",
-	) or_return
 
 	return true
 }
