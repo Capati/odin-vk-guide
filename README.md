@@ -11,6 +11,7 @@ In progress tutorial of [vkguide.dev](https://vkguide.dev/) using Odin Language.
   - [4. Textures and Engine Architecture](#4-textures-and-engine-architecture)
   - [5. GLTF loading](#5-gltf-loading)
 - [Building](#building)
+  - [Prerequisites](#prerequisites)
   - [Windows](#windows)
   - [Unix Systems (Linux/macOS)](#unix-systems-linuxmacos)
 - [Dependencies](#dependencies)
@@ -64,34 +65,52 @@ In progress tutorial of [vkguide.dev](https://vkguide.dev/) using Odin Language.
 
 ## Building
 
+Before building an example, you need to build some libraries.
+
+### Prerequisites
+
+- [Git](http://git-scm.com/downloads)
+- [Python](https://www.python.org/downloads/) - version 3.x is required
+- C++ compiler - `MSVC` on Windows or `g++` on Unix
+
 ### Windows
 
-1. Open a Command Prompt
-2. Navigate to the project directory
-3. Run the build script:
+1. Open a Command Prompt and navigate to the project directory
 
-```batch
-build.bat src\01_initializing_vulkan run
-```
+2. Rn the `prepare.bat` script to build the required libraries:
+
+    ```batch
+    prepare.bat
+    ```
+
+3. To run an example, use the build script:
+
+    ```batch
+    build.bat src\01_initializing_vulkan run
+    ```
 
 ### Unix Systems (Linux/macOS)
 
-1. Open a terminal
-2. Navigate to the project directory
-3. Make the script executable (if needed):
+1. Open a terminal and navigate to the project directory
+
+2. Make the scripts `prepare.sh` and `build.sh` executable (if needed):
 
     ```bash
-    chmod +x build.sh
+    chmod +x ./prepare.sh
+    chmod +x ./build.sh
     ```
 
-4. Run the build script:
+3. Rn the `prepare.sh` script to build the required libraries:
+
+    ```batch
+    ./prepare.sh
+    ```
+
+4. To run an example, use the build script:
 
     ```bash
     ./build.sh src/01_initializing_vulkan run
     ```
-
-Note: Make sure you have the Odin compiler installed and properly configured in
-your system PATH.
 
 ## Dependencies
 
