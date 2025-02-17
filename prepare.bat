@@ -48,7 +48,7 @@ where /Q cl.exe || (
 :: Build VMA
 echo Building VMA...
 pushd libs\vma
-call build.bat
+call build.bat 3
 popd
 if errorlevel 1 (
     echo Error occurred while building VMA

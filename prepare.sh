@@ -41,7 +41,7 @@ fi
 # Build VMA
 echo "Building VMA..."
 pushd libs/vma || exit 1
-./build.sh || {
+./build.sh 3 || {
     echo "Error occurred while building VMA"
     popd
     exit 1
