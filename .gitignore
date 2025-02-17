@@ -1,8 +1,7 @@
 # Build
 
-build
-/assets/**
-!.gitkeep
+**/build/*
+!**/build/.gitkeep
 
 # Libraries
 *.lib
