@@ -65,7 +65,9 @@ In progress tutorial of [vkguide.dev](https://vkguide.dev/) using Odin Language.
 
 ## Building
 
-Before building an example, you need to build some libraries.
+> [!NOTE]
+> This project requires some dependencies that are included as Git submodules. Follow the build
+> instructions below to set up all required libraries and properly build an example.
 
 ### Prerequisites
 
