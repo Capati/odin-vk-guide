@@ -87,7 +87,6 @@ set GENERATED_BACKENDS_DIR="%GENERATED_DIR%\backends"
 mkdir %GENERATED_DIR%
 mkdir %GENERATED_BACKENDS_DIR%
 
-
 if not exist %IMGUI_DIR% (
     echo Cloning ImGui %IMGUI_VERSION%...
     git clone https://github.com/ocornut/imgui.git %IMGUI_DIR% || goto fail
@@ -181,8 +180,9 @@ cl /c /MT /EHsc /O2 ^
 	/I"%GENERATED_BACKENDS_DIR%" ^
 	/I"%VULKAN_SDK%\Include" ^
 	/I"%GLFW_DIR%\include" ^
-    /D "IMGUI_IMPL_API=extern \"C\"" ^
-    %IMGUI_SOURCES%
+	/D"IMGUI_IMPL_API=extern \"C\"" ^
+	/DVK_NO_PROTOTYPES ^
+	%IMGUI_SOURCES%
 if errorlevel 1 goto fail
 
 :: Create static library

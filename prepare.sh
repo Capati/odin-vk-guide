@@ -165,6 +165,7 @@ for source in "${IMGUI_SOURCES[@]}"; do
         -I"${VULKAN_SDK}/include" \
         -I"${GLFW_DIR}/include" \
         -D'IMGUI_IMPL_API=extern "C"' \
+		-D'VK_NO_PROTOTYPES=0' \
         "${source}" || exit 1
 done
 
