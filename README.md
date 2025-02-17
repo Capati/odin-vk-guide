@@ -69,6 +69,35 @@ In progress tutorial of [vkguide.dev](https://vkguide.dev/) using Odin Language.
 > This project requires some dependencies that are included as Git submodules. Follow the build
 > instructions below to set up all required libraries and properly build an example.
 
+### Configuring ImGui Backends
+
+To configure the ImGui build script to use only the `glfw` and `vulkan` backends, follow these
+steps:
+
+1. **Locate the Build Script**
+
+   Open the `build.py` file located in the `libs/imgui/` directory.
+
+2. **Find the Backend Configuration**
+
+   Look for the following line in the script:
+
+    ```python
+    wanted_backends = ["vulkan", "sdl2", "opengl3", "sdlrenderer2", "glfw", "dx11", "dx12", "win32", "osx", "metal", "wgpu"]
+    ```
+
+3. **Modify the Backend List**
+
+    Update the `wanted_backends` list to include only the `glfw` and `vulkan` backends:
+
+    ```python
+    wanted_backends = ["vulkan", "glfw"]
+    ```
+
+4. **Save and Proceed**
+
+    Save the changes to the `build.py` file.
+
 ### Prerequisites
 
 - [Git](http://git-scm.com/downloads)
@@ -100,6 +129,7 @@ In progress tutorial of [vkguide.dev](https://vkguide.dev/) using Odin Language.
     ```bash
     chmod +x ./prepare.sh
     chmod +x ./build.sh
+    chmod +x .,/libs/vma/build.sh
     ```
 
 3. Rn the `prepare.sh` script to build the required libraries:
