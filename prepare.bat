@@ -74,7 +74,7 @@ set IMGUI_BACKENDS_DIR="%IMGUI_DIR%\backends"
 set DEAR_BINDINGS_DIR=.\dear_bindings
 set GLFW_DIR=.\glfw
 
-set VENV_DIR=".\venv"
+set VENV_DIR=.\venv
 if not exist "%VENV_DIR%" mkdir "%VENV_DIR%"
 
 set GENERATED_DIR=.\generated
@@ -132,11 +132,12 @@ python %DEAR_BINDINGS_CMD% ^
 	--include %IMGUI_DIR%\imgui.h %IMGUI_DIR%\imgui_internal.h
 if errorlevel 1 goto fail
 
+:: Process backends
 for %%n in (
 	glfw
 	vulkan
 ) do (
-	echo Processing %%n
+	echo Processing %%n backend
 	python %DEAR_BINDINGS_CMD% ^
 		--nogeneratedefaultargfunctions ^
 		--backend ^
@@ -170,6 +171,7 @@ for %%F in ("%GENERATED_BACKENDS_DIR%\*.cpp") do (
 set IMGUI_SOURCES=!IMGUI_SOURCES! "%IMGUI_BACKENDS_DIR%\imgui_impl_glfw.cpp"
 set IMGUI_SOURCES=!IMGUI_SOURCES! "%IMGUI_BACKENDS_DIR%\imgui_impl_vulkan.cpp"
 
+:: Remove existing build artifacts
 del /Q *.obj
 
 :: Compile with MSVC
