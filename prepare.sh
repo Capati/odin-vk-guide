@@ -144,11 +144,11 @@ LIB_EXTENSION="a"  # Static library extension for Unix
 IMGUI_SOURCES=()
 while IFS= read -r -d $'\0' file; do
     IMGUI_SOURCES+=("$file")
-done < <(find "${IMGUI_DIR}" -name "*.cpp" -print0)
+done < <(find "${IMGUI_DIR}" -maxdepth 1 -name "*.cpp" -print0)
 
 while IFS= read -r -d $'\0' file; do
     IMGUI_SOURCES+=("$file")
-done < <(find "${GENERATED_DIR}" "${GENERATED_BACKENDS_DIR}" -name "*.cpp" -print0)
+done < <(find "${GENERATED_DIR}" "${GENERATED_BACKENDS_DIR}" -maxdepth 1 -name "*.cpp" -print0)
 
 IMGUI_SOURCES+=("${IMGUI_BACKENDS_DIR}/imgui_impl_glfw.cpp")
 IMGUI_SOURCES+=("${IMGUI_BACKENDS_DIR}/imgui_impl_vulkan.cpp")
@@ -156,7 +156,10 @@ IMGUI_SOURCES+=("${IMGUI_BACKENDS_DIR}/imgui_impl_vulkan.cpp")
 rm -f *.o
 
 # Compile with g++
+MAX_JOBS=4
+FAILED=0
 for source in "${IMGUI_SOURCES[@]}"; do
+    echo "Compiling $source"
     g++ -c -O2 -fPIC \
         -I"${IMGUI_DIR}" \
         -I"${GENERATED_DIR}" \
@@ -165,9 +168,23 @@ for source in "${IMGUI_SOURCES[@]}"; do
         -I"${VULKAN_SDK}/include" \
         -I"${GLFW_DIR}/include" \
         -D'IMGUI_IMPL_API=extern "C"' \
-		-D'VK_NO_PROTOTYPES=0' \
-        "${source}" || exit 1
+        -D'VK_NO_PROTOTYPES=0' \
+        "${source}" || { FAILED=1; break; } &
+
+    # Limit the number of parallel jobs
+    if [[ $(jobs -r -p | wc -l) -ge $MAX_JOBS ]]; then
+        wait -n || { FAILED=1; break; }
+    fi
 done
+
+# Wait for all remaining jobs to finish
+wait || FAILED=1
+
+# Check if any job failed
+if [[ $FAILED -eq 1 ]]; then
+    echo "Error: Compilation failed."
+    exit 1
+fi
 
 # Create static library
 ar rcs "../imgui_${OS_NAME}_${ARCH_NAME}.${LIB_EXTENSION}" *.o
