@@ -686,10 +686,10 @@ engine_init_imgui :: proc(self: ^Engine) -> (ok: bool) {
 
 	ensure(im_vk.CreateFontsTexture(), "Failed to create ImGui fonts texture for Vulkan")
 
+	deletion_queue_push(self.main_deletion_queue, imgui_pool)
+	deletion_queue_push_c_procedure(self.main_deletion_queue, im_vk.DestroyFontsTexture)
 	deletion_queue_push_c_procedure(self.main_deletion_queue, im_vk.Shutdown)
 	deletion_queue_push_c_procedure(self.main_deletion_queue, im_glfw.Shutdown)
-	deletion_queue_push_c_procedure(self.main_deletion_queue, im_vk.DestroyFontsTexture)
-	deletion_queue_push(self.main_deletion_queue, imgui_pool)
 
 	return true
 }
