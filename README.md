@@ -69,6 +69,12 @@ In progress tutorial of [vkguide.dev](https://vkguide.dev/) using Odin Language.
 > This project requires some dependencies that are included as Git submodules. Follow the build
 > instructions below to set up all required libraries and properly build an example.
 
+### Prerequisites
+
+- [Git](http://git-scm.com/downloads)
+- [Python](https://www.python.org/downloads/) - version 3.x is required
+- C++ compiler - `MSVC` on Windows or `g++` on Unix
+
 ### Configuring ImGui Backends
 
 The guide uses `SDL2` for windowing and platform, but we are going to use `glfw`. To configure
@@ -97,12 +103,6 @@ the ImGui build script to use only the `glfw` and `vulkan` backends, follow thes
 4. **Save and Proceed**
 
     Save the changes to the `build.py` file.
-
-### Prerequisites
-
-- [Git](http://git-scm.com/downloads)
-- [Python](https://www.python.org/downloads/) - version 3.x is required
-- C++ compiler - `MSVC` on Windows or `g++` on Unix
 
 ### Windows
 
