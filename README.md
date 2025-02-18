@@ -71,8 +71,8 @@ In progress tutorial of [vkguide.dev](https://vkguide.dev/) using Odin Language.
 
 ### Configuring ImGui Backends
 
-To configure the ImGui build script to use only the `glfw` and `vulkan` backends, follow these
-steps:
+The guide uses `SD2` for windowing and platform, but we are going to use `glfw`. To configure
+the ImGui build script to use only the `glfw` and `vulkan` backends, follow these steps:
 
 1. **Locate the Build Script**
 
