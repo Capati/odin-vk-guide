@@ -12,6 +12,7 @@ In progress tutorial of [vkguide.dev](https://vkguide.dev/) using Odin Language.
   - [5. GLTF loading](#5-gltf-loading)
 - [Building](#building)
   - [Prerequisites](#prerequisites)
+  - [Configuring ImGui Backends](#configuring-imgui-backends)
   - [Windows](#windows)
   - [Unix Systems (Linux/macOS)](#unix-systems-linuxmacos)
 - [Dependencies](#dependencies)
