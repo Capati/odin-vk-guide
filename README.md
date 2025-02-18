@@ -41,8 +41,8 @@ In progress tutorial of [vkguide.dev](https://vkguide.dev/) using Odin Language.
 
 ### 3. Graphics Pipelines
 
-- [ ] The graphics pipeline
-- [ ] Setting up render pipeline
+- [x] The graphics pipeline
+- [x] Setting up render pipeline
 - [ ] Mesh buffers
 - [ ] Mesh Loading
 - [ ] Blending
