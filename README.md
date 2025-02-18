@@ -12,7 +12,7 @@ In progress tutorial of [vkguide.dev](https://vkguide.dev/) using Odin Language.
   - [5. GLTF loading](#5-gltf-loading)
 - [Building](#building)
   - [Prerequisites](#prerequisites)
-  - [Configuring ImGui Backends](#configuring-imgui-backends)
+    - [Configuring ImGui Backends](#configuring-imgui-backends)
   - [Windows](#windows)
   - [Unix Systems (Linux/macOS)](#unix-systems-linuxmacos)
 - [Dependencies](#dependencies)
@@ -76,7 +76,7 @@ In progress tutorial of [vkguide.dev](https://vkguide.dev/) using Odin Language.
 - [Python](https://www.python.org/downloads/) - version 3.x is required
 - C++ compiler - `MSVC` on Windows or `g++` on Unix
 
-### Configuring ImGui Backends
+#### Configuring ImGui Backends
 
 The guide uses `SDL2` for windowing and platform, but we are going to use `glfw`. To configure
 the ImGui build script to use only the `glfw` and `vulkan` backends, follow these steps:
