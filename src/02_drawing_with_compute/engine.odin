@@ -651,45 +651,49 @@ engine_init_imgui :: proc(self: ^Engine) -> (ok: bool) {
 	im.CHECKVERSION()
 
 	// This initializes the core structures of imgui
-	im.CreateContext()
+	im.create_context()
+	defer if !ok {im.destroy_context()}
 
 	// This initializes imgui for GLFW
-	ensure(im_glfw.InitForVulkan(self.window, true), "Failed to initialize ImGui GLFW for Vulkan")
+	im_glfw.init_for_vulkan(self.window, true) or_return
+	defer if !ok {im_glfw.shutdown()}
 
 	// This initializes imgui for Vulkan
-	init_info := im_vk.InitInfo {
-		Instance = self.vk_instance,
-		PhysicalDevice = self.vk_physical_device,
-		Device = self.vk_device,
-		Queue = self.graphics_queue,
-		DescriptorPool = imgui_pool,
-		MinImageCount = 3,
-		ImageCount = 3,
-		UseDynamicRendering = true,
-		PipelineRenderingCreateInfo = {
+	init_info := im_vk.Init_Info {
+		instance = self.vk_instance,
+		physical_device = self.vk_physical_device,
+		device = self.vk_device,
+		queue = self.graphics_queue,
+		descriptor_pool = imgui_pool,
+		min_image_count = 3,
+		image_count = 3,
+		use_dynamic_rendering = true,
+		pipeline_rendering_create_info = {
 			sType = .PIPELINE_RENDERING_CREATE_INFO,
 			colorAttachmentCount = 1,
 			pColorAttachmentFormats = &self.swapchain_format,
 		},
-		MSAASamples = ._1,
+		msaa_samples = ._1,
 	}
 
-	im_vk.LoadFunctions(
+	im_vk.load_functions(
 		proc "c" (function_name: cstring, user_data: rawptr) -> vk.ProcVoidFunction {
 			engine := cast(^Engine)user_data
 			return vk.GetInstanceProcAddr(engine.vk_instance, function_name)
 		},
 		self,
-	)
+	) or_return
 
-	ensure(im_vk.Init(&init_info), "Failed to initialize ImGui for Vulkan")
+	im_vk.init(&init_info) or_return
+	defer if !ok {im_vk.shutdown()}
 
-	ensure(im_vk.CreateFontsTexture(), "Failed to create ImGui fonts texture for Vulkan")
+	im_vk.create_fonts_texture() or_return
+	defer if !ok {im_vk.destroy_fonts_texture()}
 
 	deletion_queue_push(self.main_deletion_queue, imgui_pool)
-	deletion_queue_push_c_procedure(self.main_deletion_queue, im_vk.DestroyFontsTexture)
-	deletion_queue_push_c_procedure(self.main_deletion_queue, im_vk.Shutdown)
-	deletion_queue_push_c_procedure(self.main_deletion_queue, im_glfw.Shutdown)
+	deletion_queue_push_c_procedure(self.main_deletion_queue, im_vk.destroy_fonts_texture)
+	deletion_queue_push_c_procedure(self.main_deletion_queue, im_vk.shutdown)
+	deletion_queue_push_c_procedure(self.main_deletion_queue, im_glfw.shutdown)
 
 	return true
 }
@@ -730,23 +734,23 @@ engine_run :: proc(self: ^Engine) {
 		}
 
 		// imgui new frame
-		im_vk.NewFrame()
-		im_glfw.NewFrame()
-		im.NewFrame()
+		im_glfw.new_frame()
+		im_vk.new_frame()
+		im.new_frame()
 
-		if im.Begin("Background", nil, {.AlwaysAutoResize}) {
+		if im.begin("Background", nil, {.Always_Auto_Resize}) {
 			selected := &self.background_effects[self.current_background_effect]
 
-			im.Text("Selected effect: %s", selected.name)
+			im.text("Selected effect: %s", selected.name)
 
 			@(static) current_background_effect: i32
 			current_background_effect = i32(self.current_background_effect)
 
 			// If the combo is opened and an item is selected, update the current effect
-			if im.BeginCombo("Effect", selected.name) {
+			if im.begin_combo("Effect", selected.name) {
 				for effect, i in self.background_effects {
 					is_selected := i32(i) == current_background_effect
-					if im.Selectable(effect.name, is_selected) {
+					if im.selectable(effect.name, is_selected) {
 						current_background_effect = i32(i)
 						self.current_background_effect = Compute_Effect_Kind(
 							current_background_effect,
@@ -755,22 +759,22 @@ engine_run :: proc(self: ^Engine) {
 
 					// Set initial focus when the currently selected item becomes visible
 					if is_selected {
-						im.SetItemDefaultFocus()
+						im.set_item_default_focus()
 					}
 				}
-				im.EndCombo()
+				im.end_combo()
 			}
 
-			im.InputFloat4("data1", &selected.data.data1)
-			im.InputFloat4("data2", &selected.data.data2)
-			im.InputFloat4("data3", &selected.data.data3)
-			im.InputFloat4("data4", &selected.data.data4)
+			im.input_float4("data1", &selected.data.data1)
+			im.input_float4("data2", &selected.data.data2)
+			im.input_float4("data3", &selected.data.data3)
+			im.input_float4("data4", &selected.data.data4)
 
 		}
-		im.End()
+		im.end()
 
 		//make imgui calculate internal draw structures
-		im.Render()
+		im.render()
 
 		engine_draw(self)
 
@@ -978,7 +982,7 @@ engine_draw_imgui :: proc(
 
 	vk.CmdBeginRendering(cmd, &render_info)
 
-	im_vk.RenderDrawData(im.GetDrawData(), cmd)
+	im_vk.render_draw_data(im.get_draw_data(), cmd)
 
 	vk.CmdEndRendering(cmd)
 
@@ -1011,7 +1015,7 @@ engine_cleanup :: proc(self: ^Engine) {
 	deletion_queue_flush(self.main_deletion_queue)
 	deletion_queue_destroy(self.main_deletion_queue)
 
-	im.DestroyContext()
+	im.destroy_context()
 
 	vma.destroy_allocator(self.vma_allocator)
 
