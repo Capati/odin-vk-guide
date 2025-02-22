@@ -98,7 +98,7 @@ In progress tutorial of [vkguide.dev](https://vkguide.dev/) using Odin Language.
 2. Make the scripts executable (if needed):
 
     ```bash
-    chmod +x ./prepare.sh ./build.sh ./libs/vma/build.sh ./libs/imgui/build.sh
+    chmod +x ./prepare.sh ./build.sh
     ```
 
 3. Rn the `prepare.sh` script to build the required libraries:

@@ -41,7 +41,7 @@ fi
 # Build VMA
 echo "Building VMA..."
 pushd libs/vma || exit 1
-./build.sh 3 || {
+source ./build.sh 3 || {
     echo "Error occurred while building VMA"
     popd
     exit 1
@@ -51,7 +51,7 @@ popd
 # Build ImGui
 echo "Building ImGui..."
 pushd libs/imgui || exit 1
-./build.sh glfw vulkan || {
+source ./build.sh glfw vulkan || {
     echo "Error occurred while building ImGui"
     popd
     exit 1
