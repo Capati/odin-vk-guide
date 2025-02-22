@@ -6,7 +6,3 @@
 	path = libs/vma
 	url = https://github.com/Capati/odin-vma.git
 	ignore = all
-[submodule "libs/imgui"]
-	path = libs/imgui
-	url = https://gitlab.com/L-4/odin-imgui.git
-	ignore = all
