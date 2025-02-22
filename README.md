@@ -95,12 +95,10 @@ In progress tutorial of [vkguide.dev](https://vkguide.dev/) using Odin Language.
 
 1. Open a terminal and navigate to the project directory
 
-2. Make the scripts `prepare.sh` and `build.sh` executable (if needed):
+2. Make the scripts executable (if needed):
 
     ```bash
-    chmod +x ./prepare.sh
-    chmod +x ./build.sh
-    chmod +x .,/libs/vma/build.sh
+    chmod +x ./prepare.sh ./build.sh ./libs/vma/build.sh ./libs/imgui/build.sh
     ```
 
 3. Rn the `prepare.sh` script to build the required libraries:
