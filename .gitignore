@@ -3,6 +3,11 @@
 **/build/*
 !**/build/.gitkeep
 
+# Project
+src/*
+!src/.gitkeep
+!src/README.md
+
 # Libraries
 *.lib
 *.a
