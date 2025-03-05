@@ -521,11 +521,11 @@ engine_init_background_pipeline :: proc(self: ^Engine) -> (ok: bool) {
 		),
 	) or_return
 
-	GRADIENT_COLOR_SPV :: #load("./../shaders/gradient_color.spv")
+	GRADIENT_COLOR_SPV :: #load("./../../shaders/gradient_color.spv")
 	gradient_color_shader := create_shader_module(self.vk_device, GRADIENT_COLOR_SPV) or_return
 	defer vk.DestroyShaderModule(self.vk_device, gradient_color_shader, nil)
 
-	SKY_SPV :: #load("./../shaders/sky.spv")
+	SKY_SPV :: #load("./../../shaders/sky.spv")
 	sky_shader := create_shader_module(self.vk_device, SKY_SPV) or_return
 	defer vk.DestroyShaderModule(self.vk_device, sky_shader, nil)
 
@@ -591,14 +591,14 @@ engine_init_background_pipeline :: proc(self: ^Engine) -> (ok: bool) {
 }
 
 engine_init_triangle_pipeline :: proc(self: ^Engine) -> (ok: bool) {
-	COLORED_TRIANGLE_FRAG_SPV :: #load("./../shaders/colored_triangle_frag.spv")
+	COLORED_TRIANGLE_FRAG_SPV :: #load("./../../shaders/colored_triangle_frag.spv")
 	triangle_frag_shader := create_shader_module(
 		self.vk_device,
 		COLORED_TRIANGLE_FRAG_SPV,
 	) or_return
 	defer vk.DestroyShaderModule(self.vk_device, triangle_frag_shader, nil)
 
-	COLORED_TRIANGLE_VERT_SPV :: #load("./../shaders/colored_triangle_vert.spv")
+	COLORED_TRIANGLE_VERT_SPV :: #load("./../../shaders/colored_triangle_vert.spv")
 	triangle_vert_shader := create_shader_module(
 		self.vk_device,
 		COLORED_TRIANGLE_VERT_SPV,
