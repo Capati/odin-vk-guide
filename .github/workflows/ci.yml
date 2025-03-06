@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  workflow_dispatch:  # This enables manual triggering from the Actions tab
+
+jobs:
+  docusaurus-build:
+    runs-on: ubuntu-latest
+    name: docusaurus build
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v4.1.0
+        with:
+          node-version: "23"
+
+      - name: "npm install"
+        run: npm install
+        working-directory: website
+
+      - name: "npm run build"
+        run: npm run build
+        working-directory: website
+
+      - name: "Verify built site"
+        run: test website/build
