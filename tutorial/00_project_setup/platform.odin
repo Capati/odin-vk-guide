@@ -17,6 +17,7 @@ glfw_error_callback :: proc "c" (error: i32, description: cstring) {
 	log.errorf("GLFW [%d]: %s", error, description)
 }
 
+@(require_results)
 create_window :: proc(title: string, width, height: u32) -> (window: glfw.WindowHandle, ok: bool) {
 	// Save current logger for use outside of Odin context
 	g_logger = context.logger
@@ -35,7 +36,10 @@ create_window :: proc(title: string, width, height: u32) -> (window: glfw.Window
 	glfw.WindowHint(glfw.CLIENT_API, glfw.NO_API)
 
 	window = glfw.CreateWindow(i32(width), i32(height), c_title, nil, nil)
-	ensure(window != nil, "Failed to create a Window")
+	if window == nil {
+		log.error("Failed to create a Window")
+		return
+	}
 
 	return window, true
 }
@@ -54,6 +58,7 @@ callback_framebuffer_size :: proc "c" (window: glfw.WindowHandle, width, height:
 }
 
 callback_window_minimize :: proc "c" (window: glfw.WindowHandle, iconified: i32) {
+	// Get the engine from the window user pointer
 	engine := cast(^Engine)glfw.GetWindowUserPointer(window)
 	engine.stop_rendering = bool(iconified) // Flag to not draw if we are minimized
 }

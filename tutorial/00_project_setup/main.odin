@@ -43,7 +43,5 @@ main :: proc() {
 		}
 	}
 
-	if ok := start(); !ok {
-		log.fatal("Application exit with error!")
-	}
+	start()
 }

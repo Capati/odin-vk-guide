@@ -7,6 +7,9 @@ import "core:log"
 import "vendor:glfw"
 import vk "vendor:vulkan"
 
+TITLE :: "0. Project Setup"
+DEFAULT_WINDOW_EXTENT :: vk.Extent2D{800, 600} // Default window size in pixels
+
 Engine :: struct {
 	// Platform
 	window:         glfw.WindowHandle,
@@ -15,10 +18,8 @@ Engine :: struct {
 	stop_rendering: bool,
 }
 
-TITLE :: "0. Project Setup"
-DEFAULT_WINDOW_EXTENT :: vk.Extent2D{800, 600} // Default window size in pixels
-
 // Initializes everything in the engine.
+@(require_results)
 engine_init :: proc(self: ^Engine) -> (ok: bool) {
 	ensure(self != nil, "Invalid 'Engine' object")
 
@@ -57,12 +58,14 @@ engine_cleanup :: proc(self: ^Engine) {
 }
 
 // Draw loop.
+@(require_results)
 engine_draw :: proc(self: ^Engine) -> (ok: bool) {
 	// Nothing yet
 	return true
 }
 
 // Run main loop.
+@(require_results)
 engine_run :: proc(self: ^Engine) -> (ok: bool) {
 	log.info("Entering main loop...")
 
