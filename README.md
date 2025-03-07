@@ -27,8 +27,6 @@ In progress tutorial of [vkguide.dev](https://vkguide.dev/) using Odin Language.
 - [x] Rendering Loop
 - [x] Mainloop Code
 
-![image info](./docs/section-1.jpg)
-
 ### 2. Drawing with Compute
 
 - [x] Improving the render loop
@@ -36,8 +34,6 @@ In progress tutorial of [vkguide.dev](https://vkguide.dev/) using Odin Language.
 - [x] Vulkan Shaders - Code
 - [x] Setting up IMGUI
 - [x] Push Constants and new shaders
-
-![image info](./docs/section-2.jpg)
 
 ### 3. Graphics Pipelines
 
@@ -63,58 +59,11 @@ In progress tutorial of [vkguide.dev](https://vkguide.dev/) using Odin Language.
 - [ ] GLTF Textures
 - [ ] Faster Draw
 
-## Building
+## Project Setup
 
 > [!NOTE]
 > This project requires some dependencies that are included as Git submodules. Follow the build
-> instructions below to set up all required libraries and properly build an example.
-
-### Prerequisites
-
-- [Git](http://git-scm.com/downloads)
-- [Python](https://www.python.org/downloads/) - version 3.x is required
-- C++ compiler - `MSVC` on Windows or `g++` on Unix
-
-### Windows
-
-1. Open a Command Prompt and navigate to the project directory
-
-2. Rn the `prepare.bat` script to build the required libraries:
-
-    ```batch
-    prepare.bat
-    ```
-
-3. To run an example, use the build script:
-
-    ```batch
-    build.bat src\01_initializing_vulkan run
-    ```
-
-### Unix Systems (Linux/macOS)
-
-1. Open a terminal and navigate to the project directory
-
-2. Make the scripts executable (if needed):
-
-    ```bash
-    chmod +x ./prepare.sh ./build.sh
-    ```
-
-3. Rn the `prepare.sh` script to build the required libraries:
-
-    ```batch
-    ./prepare.sh
-    ```
-
-4. To run an example, use the build script:
-
-    ```bash
-    ./build.sh src/01_initializing_vulkan run
-    ```
-
-## Dependencies
+> instructions for each one to properly build an example.
 
 - [odin-imgui](https://github.com/Capati/odin-imgui)
-- [odin-vk-bootstrap](https://github.com/Capati/odin-vk-bootstrap)
 - [odin-vma](https://github.com/Capati/odin-vma)
