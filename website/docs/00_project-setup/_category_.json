@@ -1,0 +1,8 @@
+{
+  "label": "0. Project Setup",
+  "position": 3,
+  "description": "In this chapter, we setup the build toolchain to compile the project",
+  "link": {
+    "type": "generated-index"
+  }
+}
