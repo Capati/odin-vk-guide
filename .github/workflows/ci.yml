@@ -19,8 +19,9 @@ jobs:
       - name: "Verify built site"
         run: test -d website/build
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
+          name: build
           path: website/build  # Path to your build folder
   deploy:
     needs: docusaurus-build  # Ensure this runs after the build job
