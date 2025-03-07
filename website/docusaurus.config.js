@@ -113,28 +113,19 @@ const config = {
 				style: 'dark',
 				links: [
 					{
-						title: 'Docs',
-						items: [
-							{
-								label: 'Tutorial',
-								to: '/docs/intro',
-							},
-						],
-					},
-					{
 						title: 'Community',
 						items: [
 							{
-								label: 'Stack Overflow',
-								href: 'https://stackoverflow.com/questions/tagged/docusaurus',
+								label: 'Odin Programming Language',
+								href: 'https://odin-lang.org/',
 							},
 							{
-								label: 'Discord',
-								href: 'https://discordapp.com/invite/docusaurus',
+								label: 'Odin Discord',
+								href: 'https://discord.gg/vafXTdubwr',
 							},
 							{
-								label: 'X',
-								href: 'https://x.com/docusaurus',
+								label: 'Odin Forum',
+								href: 'https://forum.odin-lang.org/',
 							},
 						],
 					},
@@ -142,12 +133,8 @@ const config = {
 						title: 'More',
 						items: [
 							{
-								label: 'Blog',
-								to: '/blog',
-							},
-							{
-								label: 'GitHub',
-								href: 'https://github.com/facebook/docusaurus',
+								label: 'Vulkan Guide',
+								href: 'https://vkguide.dev/',
 							},
 						],
 					},
