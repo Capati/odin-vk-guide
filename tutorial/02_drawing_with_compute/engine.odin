@@ -19,7 +19,8 @@ import im_vk "libs:imgui/imgui_impl_vulkan"
 import "libs:vkb"
 import "libs:vma"
 
-FRAME_OVERLAP :: 2
+TITLE :: "2. Drawing with Compute"
+DEFAULT_WINDOW_EXTENT :: vk.Extent2D{800, 600} // Default window size in pixels
 
 Frame_Data :: struct {
 	command_pool:        vk.CommandPool,
@@ -29,6 +30,8 @@ Frame_Data :: struct {
 	render_fence:        vk.Fence,
 	deletion_queue:      ^Deletion_Queue,
 }
+
+FRAME_OVERLAP :: 2
 
 Compute_Push_Constants :: struct {
 	data1: la.Vector4f32,
@@ -104,28 +107,28 @@ Engine :: struct {
 	vma_allocator:                vma.Allocator,
 }
 
-TITLE :: "2. Drawing with Compute"
-
 // Initializes everything in the engine.
 engine_init :: proc(self: ^Engine) -> (ok: bool) {
 	ensure(self != nil, "Invalid 'Engine' object")
 
-	// Default window  size in pixels
-	self.window_extent = {800, 600}
-
-	width := self.window_extent.width
-	height := self.window_extent.height
+	self.window_extent = DEFAULT_WINDOW_EXTENT
 
 	// Create a window using GLFW
-	self.window = create_window(TITLE, width, height) or_return
+	self.window = create_window(
+		TITLE,
+		self.window_extent.width,
+		self.window_extent.height,
+	) or_return
 	defer if !ok {
 		destroy_window(self.window)
 	}
 
-	// Set window callbacks
+	// Set the window user pointer so we can get the engine from callbacks
 	glfw.SetWindowUserPointer(self.window, self)
-	glfw.SetFramebufferSizeCallback(self.window, size_callback)
-	glfw.SetWindowIconifyCallback(self.window, iconify_callback)
+
+	// Set window callbacks
+	glfw.SetFramebufferSizeCallback(self.window, callback_framebuffer_size)
+	glfw.SetWindowIconifyCallback(self.window, callback_window_minimize)
 
 	engine_init_vulkan(self) or_return
 
@@ -180,7 +183,7 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 	defer if !ok {
 		vkb.destroy_instance(self.vkb.instance)
 	}
-	self.vk_instance = self.vkb.instance.ptr
+	self.vk_instance = self.vkb.instance.handle
 
 	// Surface
 	vk_check(
@@ -217,7 +220,7 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 	defer if !ok {
 		vkb.destroy_physical_device(self.vkb.physical_device)
 	}
-	self.vk_physical_device = self.vkb.physical_device.ptr
+	self.vk_physical_device = self.vkb.physical_device.handle
 
 	// Create the final vulkan device
 	device_builder := vkb.init_device_builder(self.vkb.physical_device) or_return
@@ -227,23 +230,25 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 	defer if !ok {
 		vkb.destroy_device(self.vkb.device)
 	}
-	self.vk_device = self.vkb.device.ptr
+	self.vk_device = self.vkb.device.handle
 
 	// use vk-bootstrap to get a Graphics queue
 	self.graphics_queue = vkb.device_get_queue(self.vkb.device, .Graphics) or_return
 	self.graphics_queue_family = vkb.device_get_queue_index(self.vkb.device, .Graphics) or_return
+
+	// Create global deletion queue
+	self.main_deletion_queue = create_deletion_queue(self.vk_device)
 
 	// Create the VMA (Vulkan Memory Allocator)
 	// Initializes a subset of Vulkan functions required by VMA
 	vma_vulkan_functions := vma.create_vulkan_functions()
 
 	allocator_create_info: vma.Allocator_Create_Info = {
-		flags              = {.Buffer_Device_Address},
-		instance           = self.vk_instance,
-		vulkan_api_version = vkb.convert_vulkan_to_vma_version(self.vkb.instance.api_version),
-		physical_device    = self.vk_physical_device,
-		device             = self.vk_device,
-		vulkan_functions   = &vma_vulkan_functions,
+		flags            = {.Buffer_Device_Address},
+		instance         = self.vk_instance,
+		physical_device  = self.vk_physical_device,
+		device           = self.vk_device,
+		vulkan_functions = &vma_vulkan_functions,
 	}
 
 	vk_check(
@@ -251,8 +256,7 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 		"Failed to Create Vulkan Memory Allocator",
 	) or_return
 
-	// Create global deletion queue
-	self.main_deletion_queue = create_deletion_queue(self.vk_device, self.vma_allocator)
+	deletion_queue_push(self.main_deletion_queue, self.vma_allocator)
 
 	return true
 }
@@ -274,7 +278,7 @@ engine_create_swapchain :: proc(self: ^Engine, width, height: u32) -> (ok: bool)
 	vkb.swapchain_builder_add_image_usage_flags(&builder, {.TRANSFER_DST})
 
 	self.vkb.swapchain = vkb.build_swapchain(&builder) or_return
-	self.vk_swapchain = self.vkb.swapchain.ptr
+	self.vk_swapchain = self.vkb.swapchain.handle
 
 	self.swapchain_images = vkb.swapchain_get_images(self.vkb.swapchain) or_return
 	self.swapchain_image_views = vkb.swapchain_get_image_views(self.vkb.swapchain) or_return
@@ -342,8 +346,7 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
 	deletion_queue_push(self.main_deletion_queue, self.draw_image.image_view)
 	deletion_queue_push(
 		self.main_deletion_queue,
-		self.draw_image.image,
-		self.draw_image.allocation,
+		Image_Resource{self.draw_image.image, self.vma_allocator, self.draw_image.allocation},
 	)
 
 	return true
@@ -357,29 +360,20 @@ engine_init_commands :: proc(self: ^Engine) -> (ok: bool) {
 		{.RESET_COMMAND_BUFFER},
 	)
 
-	for i in 0 ..< FRAME_OVERLAP {
+	for &frame in self.frames {
 		// Create peer frame deletion queue
-		self.frames[i].deletion_queue = create_deletion_queue(self.vk_device, self.vma_allocator)
+		frame.deletion_queue = create_deletion_queue(self.vk_device)
 
 		// Create the command pool
 		vk_check(
-			vk.CreateCommandPool(
-				self.vk_device,
-				&command_pool_info,
-				nil,
-				&self.frames[i].command_pool,
-			),
+			vk.CreateCommandPool(self.vk_device, &command_pool_info, nil, &frame.command_pool),
 		) or_return
 
 		// Allocate the default command buffer that we will use for rendering
-		cmd_alloc_info := command_buffer_allocate_info(self.frames[i].command_pool)
+		cmd_alloc_info := command_buffer_allocate_info(frame.command_pool)
 
 		vk_check(
-			vk.AllocateCommandBuffers(
-				self.vk_device,
-				&cmd_alloc_info,
-				&self.frames[i].main_command_buffer,
-			),
+			vk.AllocateCommandBuffers(self.vk_device, &cmd_alloc_info, &frame.main_command_buffer),
 		) or_return
 	}
 
@@ -691,9 +685,9 @@ engine_init_imgui :: proc(self: ^Engine) -> (ok: bool) {
 	defer if !ok {im_vk.destroy_fonts_texture()}
 
 	deletion_queue_push(self.main_deletion_queue, imgui_pool)
-	deletion_queue_push_c_procedure(self.main_deletion_queue, im_vk.destroy_fonts_texture)
-	deletion_queue_push_c_procedure(self.main_deletion_queue, im_vk.shutdown)
-	deletion_queue_push_c_procedure(self.main_deletion_queue, im_glfw.shutdown)
+	deletion_queue_push(self.main_deletion_queue, im_vk.destroy_fonts_texture)
+	deletion_queue_push(self.main_deletion_queue, im_vk.shutdown)
+	deletion_queue_push(self.main_deletion_queue, im_glfw.shutdown)
 
 	return true
 }
@@ -703,7 +697,8 @@ engine_get_current_frame :: #force_inline proc(self: ^Engine) -> ^Frame_Data #no
 }
 
 // Run main loop.
-engine_run :: proc(self: ^Engine) {
+@(require_results)
+engine_run :: proc(self: ^Engine) -> (ok: bool) {
 	// Get monitor info
 	monitor_info := get_primary_monitor_info()
 	log.debugf("Monitor refresh rate: %d Hz", monitor_info.refresh_rate)
@@ -776,12 +771,14 @@ engine_run :: proc(self: ^Engine) {
 		//make imgui calculate internal draw structures
 		im.render()
 
-		engine_draw(self)
+		engine_draw(self) or_return
 
 		previous_time = current_time
 	}
 
 	log.info("Exiting...")
+
+	return true
 }
 
 engine_draw_background :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool) {
@@ -835,6 +832,7 @@ engine_draw_background :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: boo
 }
 
 // Draw loop.
+@(require_results)
 engine_draw :: proc(self: ^Engine) -> (ok: bool) {
 	// Steps:
 	//
@@ -848,6 +846,9 @@ engine_draw :: proc(self: ^Engine) -> (ok: bool) {
 
 	// Wait until the gpu has finished rendering the last frame. Timeout of 1 second
 	vk_check(vk.WaitForFences(self.vk_device, 1, &render_fence, true, max(u64))) or_return
+
+	deletion_queue_flush(engine_get_current_frame(self).deletion_queue)
+
 	vk_check(vk.ResetFences(self.vk_device, 1, &render_fence)) or_return
 
 	swapchain_semaphore := engine_get_current_frame(self).swapchain_semaphore
@@ -998,21 +999,19 @@ engine_cleanup :: proc(self: ^Engine) {
 	// Make sure the gpu has stopped doing its things
 	ensure(vk.DeviceWaitIdle(self.vk_device) == .SUCCESS)
 
-	for i in 0 ..< FRAME_OVERLAP {
-		vk.DestroyCommandPool(self.vk_device, self.frames[i].command_pool, nil)
+	for &frame in self.frames {
+		vk.DestroyCommandPool(self.vk_device, frame.command_pool, nil)
 
 		// Destroy sync objects
-		vk.DestroyFence(self.vk_device, self.frames[i].render_fence, nil)
-		vk.DestroySemaphore(self.vk_device, self.frames[i].render_semaphore, nil)
-		vk.DestroySemaphore(self.vk_device, self.frames[i].swapchain_semaphore, nil)
+		vk.DestroyFence(self.vk_device, frame.render_fence, nil)
+		vk.DestroySemaphore(self.vk_device, frame.render_semaphore, nil)
+		vk.DestroySemaphore(self.vk_device, frame.swapchain_semaphore, nil)
 
 		// Flush and destroy the peer frame deletion queue
-		deletion_queue_flush(self.frames[i].deletion_queue)
-		deletion_queue_destroy(self.frames[i].deletion_queue)
+		deletion_queue_destroy(frame.deletion_queue)
 	}
 
-	// Flush destroy the global deletion queue
-	deletion_queue_flush(self.main_deletion_queue)
+	// Flush and destroy the global deletion queue
 	deletion_queue_destroy(self.main_deletion_queue)
 
 	im.destroy_context()

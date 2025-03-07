@@ -11,27 +11,29 @@ import "vendor:glfw"
 @(private = "file")
 g_logger: log.Logger
 
-glfw_error :: proc "c" (error: i32, description: cstring) {
+glfw_error_callback :: proc "c" (error: i32, description: cstring) {
 	context = runtime.default_context()
 	context.logger = g_logger
-	log.errorf("GLFW Error [%d]: %s", error, description)
+	log.errorf("GLFW [%d]: %s", error, description)
 }
 
+@(require_results)
 create_window :: proc(title: string, width, height: u32) -> (window: glfw.WindowHandle, ok: bool) {
 	// Save current logger for use outside of Odin context
 	g_logger = context.logger
 
-	glfw.SetErrorCallback(glfw_error)
+	// We initialize GLFW and create a window with it.
+	ensure(bool(glfw.Init()), "Failed to initialize GLFW")
 
-	if !glfw.Init() {
-		log.error("Failed to initialize GLFW")
-		return
-	}
-
-	glfw.WindowHint(glfw.CLIENT_API, glfw.NO_API)
+	glfw.SetErrorCallback(glfw_error_callback)
 
 	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 	c_title := strings.clone_to_cstring(title, context.temp_allocator)
+
+	// We specify that the window created by GLFW should not be associated with any specific
+	// client API, such as OpenGL or OpenGL ES. This is particularly important when targeting
+	// Vulkan.
+	glfw.WindowHint(glfw.CLIENT_API, glfw.NO_API)
 
 	window = glfw.CreateWindow(i32(width), i32(height), c_title, nil, nil)
 	if window == nil {
@@ -42,17 +44,23 @@ create_window :: proc(title: string, width, height: u32) -> (window: glfw.Window
 	return window, true
 }
 
-size_callback :: proc "c" (window: glfw.WindowHandle, width, height: i32) {
+destroy_window :: proc(window: glfw.WindowHandle) {
+	glfw.DestroyWindow(window)
+	glfw.Terminate()
 }
 
-iconify_callback :: proc "c" (window: glfw.WindowHandle, iconified: i32) {
+// -----------------------------------------------------------------------------
+// Callbacks
+// -----------------------------------------------------------------------------
+
+callback_framebuffer_size :: proc "c" (window: glfw.WindowHandle, width, height: i32) {
+	// TODO: Implement later
+}
+
+callback_window_minimize :: proc "c" (window: glfw.WindowHandle, iconified: i32) {
+	// Get the engine from the window user pointer
 	engine := cast(^Engine)glfw.GetWindowUserPointer(window)
-	engine.stop_rendering = bool(iconified)
-}
-
-get_framebuffer_size :: proc(window: glfw.WindowHandle) -> (u32, u32) {
-	width, height := glfw.GetFramebufferSize(window)
-	return u32(width), u32(height)
+	engine.stop_rendering = bool(iconified) // Flag to not draw if we are minimized
 }
 
 Monitor_Info :: struct {
@@ -69,9 +77,4 @@ get_primary_monitor_info :: proc() -> Monitor_Info {
 		frame_time_target = 1.0 / f64(mode.refresh_rate),
 	}
 	return info
-}
-
-destroy_window :: proc(window: glfw.WindowHandle) {
-	glfw.DestroyWindow(window)
-	glfw.Terminate()
 }
