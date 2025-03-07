@@ -1,26 +1,38 @@
 name: CI
-
 on:
-  workflow_dispatch:  # This enables manual triggering from the Actions tab
-
+  workflow_dispatch:  # Manual trigger
 jobs:
   docusaurus-build:
     runs-on: ubuntu-latest
-    name: docusaurus build
-
+    name: Docusaurus Build
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4.1.0
         with:
           node-version: "23"
-
       - name: "npm install"
         run: npm install
         working-directory: website
-
       - name: "npm run build"
         run: npm run build
         working-directory: website
-
       - name: "Verify built site"
-        run: test website/build
+        run: test -d website/build || exit 1  # Fail explicitly if directory doesn’t exist
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/build
+
+  deploy:
+    needs: docusaurus-build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
