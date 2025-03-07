@@ -11,7 +11,7 @@ import { themes as prismThemes } from 'prism-react-renderer';
 /** @type {import('@docusaurus/types').Config} */
 const config = {
 	title: 'Odin Vulkan Guide',
-	tagline: 'Dinosaurs are cool',
+	tagline: 'Practical guide to Vulkan graphics programming using Odin Language',
 	favicon: 'img/favicon.ico',
 
 	// Set the production url of your site here
