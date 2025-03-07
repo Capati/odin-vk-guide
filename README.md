@@ -14,6 +14,7 @@ goes to the authors of vkguide.dev.
   - [4. Textures and Engine Architecture](#4-textures-and-engine-architecture)
   - [5. GLTF loading](#5-gltf-loading)
   - [6. GPU Driven Rendering](#6-gpu-driven-rendering)
+- [License](#license)
 
 ## Progress
 
