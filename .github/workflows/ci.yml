@@ -4,9 +4,9 @@ on:
 jobs:
   docusaurus-build:
     runs-on: ubuntu-latest
-    name: docusaurus build
+    name: Docusaurus Build
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4  # Updated to v4 for latest features
       - uses: actions/setup-node@v4.1.0
         with:
           node-version: "23"
@@ -19,10 +19,11 @@ jobs:
       - name: "Verify built site"
         run: test -d website/build
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4  # Updated to v4
         with:
           name: build
           path: website/build  # Path to your build folder
+
   deploy:
     needs: docusaurus-build  # Ensure this runs after the build job
     runs-on: ubuntu-latest
@@ -33,6 +34,11 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4  # Add this step to retrieve the artifact
+        with:
+          name: build
+          path: website/build
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v2
