@@ -60,7 +60,6 @@ copy_image_to_image :: proc(
 
 	blit_info := vk.BlitImageInfo2 {
 		sType          = .BLIT_IMAGE_INFO_2,
-		pNext          = nil,
 		srcImage       = source,
 		srcImageLayout = .TRANSFER_SRC_OPTIMAL,
 		dstImage       = destination,

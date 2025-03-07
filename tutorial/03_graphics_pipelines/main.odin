@@ -4,17 +4,17 @@ package vk_guide
 import "core:log"
 import "core:mem"
 
-start :: proc() {
+start :: proc() -> (ok: bool) {
 	engine := new(Engine)
 	ensure(engine != nil, "Failed to allocate 'Engine' object")
 	defer free(engine)
 
-	if !engine_init(engine) {
-		return
-	}
+	engine_init(engine) or_return
 	defer engine_cleanup(engine)
 
-	engine_run(engine)
+	engine_run(engine) or_return
+
+	return true
 }
 
 main :: proc() {

@@ -7,11 +7,11 @@ command_pool_create_info :: proc(
 	queueFamilyIndex: u32,
 	flags: vk.CommandPoolCreateFlags = {},
 ) -> vk.CommandPoolCreateInfo {
-	info := vk.CommandPoolCreateInfo{}
-	info.sType = .COMMAND_POOL_CREATE_INFO
-	info.pNext = nil
-	info.queueFamilyIndex = queueFamilyIndex
-	info.flags = flags
+	info := vk.CommandPoolCreateInfo {
+		sType            = .COMMAND_POOL_CREATE_INFO,
+		queueFamilyIndex = queueFamilyIndex,
+		flags            = flags,
+	}
 	return info
 }
 
@@ -19,39 +19,38 @@ command_buffer_allocate_info :: proc(
 	pool: vk.CommandPool,
 	count: u32 = 1,
 ) -> vk.CommandBufferAllocateInfo {
-	info := vk.CommandBufferAllocateInfo{}
-	info.sType = .COMMAND_BUFFER_ALLOCATE_INFO
-	info.pNext = nil
-	info.commandPool = pool
-	info.commandBufferCount = count
-	info.level = .PRIMARY
+	info := vk.CommandBufferAllocateInfo {
+		sType              = .COMMAND_BUFFER_ALLOCATE_INFO,
+		commandPool        = pool,
+		commandBufferCount = count,
+		level              = .PRIMARY,
+	}
 	return info
 }
 
 command_buffer_begin_info :: proc(
 	flags: vk.CommandBufferUsageFlags = {},
 ) -> vk.CommandBufferBeginInfo {
-	info := vk.CommandBufferBeginInfo{}
-	info.sType = .COMMAND_BUFFER_BEGIN_INFO
-	info.pNext = nil
-	info.pInheritanceInfo = nil
-	info.flags = flags
+	info := vk.CommandBufferBeginInfo {
+		sType = .COMMAND_BUFFER_BEGIN_INFO,
+		flags = flags,
+	}
 	return info
 }
 
 fence_create_info :: proc(flags: vk.FenceCreateFlags = {}) -> vk.FenceCreateInfo {
-	info := vk.FenceCreateInfo{}
-	info.sType = .FENCE_CREATE_INFO
-	info.pNext = nil
-	info.flags = flags
+	info := vk.FenceCreateInfo {
+		sType = .FENCE_CREATE_INFO,
+		flags = flags,
+	}
 	return info
 }
 
 semaphore_create_info :: proc(flags: vk.SemaphoreCreateFlags = {}) -> vk.SemaphoreCreateInfo {
-	info := vk.SemaphoreCreateInfo{}
-	info.sType = .SEMAPHORE_CREATE_INFO
-	info.pNext = nil
-	info.flags = flags
+	info := vk.SemaphoreCreateInfo {
+		sType = .SEMAPHORE_CREATE_INFO,
+		flags = flags,
+	}
 	return info
 }
 
@@ -59,22 +58,20 @@ semaphore_submit_info :: proc(
 	stageMask: vk.PipelineStageFlags2,
 	semaphore: vk.Semaphore,
 ) -> vk.SemaphoreSubmitInfo {
-	submitInfo := vk.SemaphoreSubmitInfo{}
-	submitInfo.sType = .SEMAPHORE_SUBMIT_INFO
-	submitInfo.pNext = nil
-	submitInfo.semaphore = semaphore
-	submitInfo.stageMask = stageMask
-	submitInfo.deviceIndex = 0
-	submitInfo.value = 1
+	submitInfo := vk.SemaphoreSubmitInfo {
+		sType     = .SEMAPHORE_SUBMIT_INFO,
+		semaphore = semaphore,
+		stageMask = stageMask,
+		value     = 1,
+	}
 	return submitInfo
 }
 
 command_buffer_submit_info :: proc(cmd: vk.CommandBuffer) -> vk.CommandBufferSubmitInfo {
-	info := vk.CommandBufferSubmitInfo{}
-	info.sType = .COMMAND_BUFFER_SUBMIT_INFO
-	info.pNext = nil
-	info.commandBuffer = cmd
-	info.deviceMask = 0
+	info := vk.CommandBufferSubmitInfo {
+		sType         = .COMMAND_BUFFER_SUBMIT_INFO,
+		commandBuffer = cmd,
+	}
 	return info
 }
 
@@ -83,42 +80,37 @@ submit_info :: proc(
 	signalSemaphoreInfo: ^vk.SemaphoreSubmitInfo,
 	waitSemaphoreInfo: ^vk.SemaphoreSubmitInfo,
 ) -> vk.SubmitInfo2 {
-	info := vk.SubmitInfo2{}
-	info.sType = .SUBMIT_INFO_2
-	info.pNext = nil
-	info.waitSemaphoreInfoCount = waitSemaphoreInfo == nil ? 0 : 1
-	info.pWaitSemaphoreInfos = waitSemaphoreInfo
-	info.signalSemaphoreInfoCount = signalSemaphoreInfo == nil ? 0 : 1
-	info.pSignalSemaphoreInfos = signalSemaphoreInfo
-	info.commandBufferInfoCount = 1
-	info.pCommandBufferInfos = cmd
+	info := vk.SubmitInfo2 {
+		sType                    = .SUBMIT_INFO_2,
+		waitSemaphoreInfoCount   = waitSemaphoreInfo == nil ? 0 : 1,
+		pWaitSemaphoreInfos      = waitSemaphoreInfo,
+		signalSemaphoreInfoCount = signalSemaphoreInfo == nil ? 0 : 1,
+		pSignalSemaphoreInfos    = signalSemaphoreInfo,
+		commandBufferInfoCount   = 1,
+		pCommandBufferInfos      = cmd,
+	}
 	return info
 }
 
 present_info :: proc() -> vk.PresentInfoKHR {
-	info := vk.PresentInfoKHR{}
-	info.sType = .PRESENT_INFO_KHR
-	info.pNext = nil
-	info.swapchainCount = 0
-	info.pSwapchains = nil
-	info.pWaitSemaphores = nil
-	info.waitSemaphoreCount = 0
-	info.pImageIndices = nil
+	info := vk.PresentInfoKHR {
+		sType = .PRESENT_INFO_KHR,
+	}
 	return info
 }
 
 attachment_info :: proc(
 	view: vk.ImageView,
-	clear: ^vk.ClearValue = nil,
+	clear: ^vk.ClearValue,
 	layout: vk.ImageLayout = .COLOR_ATTACHMENT_OPTIMAL,
 ) -> vk.RenderingAttachmentInfo {
-	colorAttachment := vk.RenderingAttachmentInfo{}
-	colorAttachment.sType = .RENDERING_ATTACHMENT_INFO
-	colorAttachment.pNext = nil
-	colorAttachment.imageView = view
-	colorAttachment.imageLayout = layout
-	colorAttachment.loadOp = clear != nil ? .CLEAR : .LOAD
-	colorAttachment.storeOp = .STORE
+	colorAttachment := vk.RenderingAttachmentInfo {
+		sType       = .RENDERING_ATTACHMENT_INFO,
+		imageView   = view,
+		imageLayout = layout,
+		loadOp      = clear != nil ? .CLEAR : .LOAD,
+		storeOp     = .STORE,
+	}
 	if clear != nil {
 		colorAttachment.clearValue = clear^
 	}
@@ -129,14 +121,13 @@ depth_attachment_info :: proc(
 	view: vk.ImageView,
 	layout: vk.ImageLayout = .COLOR_ATTACHMENT_OPTIMAL,
 ) -> vk.RenderingAttachmentInfo {
-	depthAttachment := vk.RenderingAttachmentInfo{}
-	depthAttachment.sType = .RENDERING_ATTACHMENT_INFO
-	depthAttachment.pNext = nil
-	depthAttachment.imageView = view
-	depthAttachment.imageLayout = layout
-	depthAttachment.loadOp = .CLEAR
-	depthAttachment.storeOp = .STORE
-	depthAttachment.clearValue.depthStencil.depth = 0.0
+	depthAttachment := vk.RenderingAttachmentInfo {
+		sType       = .RENDERING_ATTACHMENT_INFO,
+		imageView   = view,
+		imageLayout = layout,
+		loadOp      = .CLEAR,
+		storeOp     = .STORE,
+	}
 	return depthAttachment
 }
 
@@ -145,28 +136,23 @@ rendering_info :: proc(
 	colorAttachment: ^vk.RenderingAttachmentInfo,
 	depthAttachment: ^vk.RenderingAttachmentInfo,
 ) -> vk.RenderingInfo {
-	renderInfo := vk.RenderingInfo{}
-	renderInfo.sType = .RENDERING_INFO
-	renderInfo.pNext = nil
-	renderInfo.renderArea = vk.Rect2D {
-		offset = {0, 0},
-		extent = renderExtent,
+	renderInfo := vk.RenderingInfo {
+		sType = .RENDERING_INFO,
+		renderArea = vk.Rect2D{extent = renderExtent},
+		layerCount = 1,
+		colorAttachmentCount = 1,
+		pColorAttachments = colorAttachment,
+		pDepthAttachment = depthAttachment,
 	}
-	renderInfo.layerCount = 1
-	renderInfo.colorAttachmentCount = 1
-	renderInfo.pColorAttachments = colorAttachment
-	renderInfo.pDepthAttachment = depthAttachment
-	renderInfo.pStencilAttachment = nil
 	return renderInfo
 }
 
 image_subresource_range :: proc(aspectMask: vk.ImageAspectFlags) -> vk.ImageSubresourceRange {
-	subImage := vk.ImageSubresourceRange{}
-	subImage.aspectMask = aspectMask
-	subImage.baseMipLevel = 0
-	subImage.levelCount = vk.REMAINING_MIP_LEVELS
-	subImage.baseArrayLayer = 0
-	subImage.layerCount = vk.REMAINING_ARRAY_LAYERS
+	subImage := vk.ImageSubresourceRange {
+		aspectMask = aspectMask,
+		levelCount = vk.REMAINING_MIP_LEVELS,
+		layerCount = vk.REMAINING_ARRAY_LAYERS,
+	}
 	return subImage
 }
 
@@ -175,12 +161,13 @@ descriptorset_layout_binding :: proc(
 	stageFlags: vk.ShaderStageFlags,
 	binding: u32,
 ) -> vk.DescriptorSetLayoutBinding {
-	setbind := vk.DescriptorSetLayoutBinding{}
-	setbind.binding = binding
-	setbind.descriptorCount = 1
-	setbind.descriptorType = type
-	setbind.pImmutableSamplers = nil
-	setbind.stageFlags = stageFlags
+	setbind := vk.DescriptorSetLayoutBinding {
+		binding            = binding,
+		descriptorCount    = 1,
+		descriptorType     = type,
+		pImmutableSamplers = nil,
+		stageFlags         = stageFlags,
+	}
 	return setbind
 }
 
@@ -188,12 +175,11 @@ descriptorset_layout_create_info :: proc(
 	bindings: ^vk.DescriptorSetLayoutBinding,
 	bindingCount: u32,
 ) -> vk.DescriptorSetLayoutCreateInfo {
-	info := vk.DescriptorSetLayoutCreateInfo{}
-	info.sType = .DESCRIPTOR_SET_LAYOUT_CREATE_INFO
-	info.pNext = nil
-	info.pBindings = bindings
-	info.bindingCount = bindingCount
-	info.flags = {}
+	info := vk.DescriptorSetLayoutCreateInfo {
+		sType        = .DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+		pBindings    = bindings,
+		bindingCount = bindingCount,
+	}
 	return info
 }
 
@@ -203,14 +189,14 @@ write_descriptor_image :: proc(
 	imageInfo: ^vk.DescriptorImageInfo,
 	binding: u32,
 ) -> vk.WriteDescriptorSet {
-	write := vk.WriteDescriptorSet{}
-	write.sType = .WRITE_DESCRIPTOR_SET
-	write.pNext = nil
-	write.dstBinding = binding
-	write.dstSet = dstSet
-	write.descriptorCount = 1
-	write.descriptorType = type
-	write.pImageInfo = imageInfo
+	write := vk.WriteDescriptorSet {
+		sType           = .WRITE_DESCRIPTOR_SET,
+		dstBinding      = binding,
+		dstSet          = dstSet,
+		descriptorCount = 1,
+		descriptorType  = type,
+		pImageInfo      = imageInfo,
+	}
 	return write
 }
 
@@ -220,14 +206,14 @@ write_descriptor_buffer :: proc(
 	bufferInfo: ^vk.DescriptorBufferInfo,
 	binding: u32,
 ) -> vk.WriteDescriptorSet {
-	write := vk.WriteDescriptorSet{}
-	write.sType = .WRITE_DESCRIPTOR_SET
-	write.pNext = nil
-	write.dstBinding = binding
-	write.dstSet = dstSet
-	write.descriptorCount = 1
-	write.descriptorType = type
-	write.pBufferInfo = bufferInfo
+	write := vk.WriteDescriptorSet {
+		sType           = .WRITE_DESCRIPTOR_SET,
+		dstBinding      = binding,
+		dstSet          = dstSet,
+		descriptorCount = 1,
+		descriptorType  = type,
+		pBufferInfo     = bufferInfo,
+	}
 	return write
 }
 
@@ -236,10 +222,11 @@ buffer_info :: proc(
 	offset: vk.DeviceSize,
 	range: vk.DeviceSize,
 ) -> vk.DescriptorBufferInfo {
-	binfo := vk.DescriptorBufferInfo{}
-	binfo.buffer = buffer
-	binfo.offset = offset
-	binfo.range = range
+	binfo := vk.DescriptorBufferInfo {
+		buffer = buffer,
+		offset = offset,
+		range  = range,
+	}
 	return binfo
 }
 
@@ -248,17 +235,17 @@ image_create_info :: proc(
 	usageFlags: vk.ImageUsageFlags,
 	extent: vk.Extent3D,
 ) -> vk.ImageCreateInfo {
-	info := vk.ImageCreateInfo{}
-	info.sType = .IMAGE_CREATE_INFO
-	info.pNext = nil
-	info.imageType = .D2
-	info.format = format
-	info.extent = extent
-	info.mipLevels = 1
-	info.arrayLayers = 1
-	info.samples = {._1}
-	info.tiling = .OPTIMAL
-	info.usage = usageFlags
+	info := vk.ImageCreateInfo {
+		sType       = .IMAGE_CREATE_INFO,
+		imageType   = .D2,
+		format      = format,
+		extent      = extent,
+		mipLevels   = 1,
+		arrayLayers = 1,
+		samples     = {._1},
+		tiling      = .OPTIMAL,
+		usage       = usageFlags,
+	}
 	return info
 }
 
@@ -267,29 +254,20 @@ imageview_create_info :: proc(
 	image: vk.Image,
 	aspectFlags: vk.ImageAspectFlags,
 ) -> vk.ImageViewCreateInfo {
-	info := vk.ImageViewCreateInfo{}
-	info.sType = .IMAGE_VIEW_CREATE_INFO
-	info.pNext = nil
-	info.viewType = .D2
-	info.image = image
-	info.format = format
-	info.subresourceRange.baseMipLevel = 0
-	info.subresourceRange.levelCount = 1
-	info.subresourceRange.baseArrayLayer = 0
-	info.subresourceRange.layerCount = 1
-	info.subresourceRange.aspectMask = aspectFlags
+	info := vk.ImageViewCreateInfo {
+		sType = .IMAGE_VIEW_CREATE_INFO,
+		viewType = .D2,
+		image = image,
+		format = format,
+		subresourceRange = {levelCount = 1, layerCount = 1, aspectMask = aspectFlags},
+	}
 	return info
 }
 
 pipeline_layout_create_info :: proc() -> vk.PipelineLayoutCreateInfo {
-	info := vk.PipelineLayoutCreateInfo{}
-	info.sType = .PIPELINE_LAYOUT_CREATE_INFO
-	info.pNext = nil
-	info.flags = {}
-	info.setLayoutCount = 0
-	info.pSetLayouts = nil
-	info.pushConstantRangeCount = 0
-	info.pPushConstantRanges = nil
+	info := vk.PipelineLayoutCreateInfo {
+		sType = .PIPELINE_LAYOUT_CREATE_INFO,
+	}
 	return info
 }
 
@@ -298,11 +276,11 @@ pipeline_shader_stage_create_info :: proc(
 	shaderModule: vk.ShaderModule,
 	entry: cstring,
 ) -> vk.PipelineShaderStageCreateInfo {
-	info := vk.PipelineShaderStageCreateInfo{}
-	info.sType = .PIPELINE_SHADER_STAGE_CREATE_INFO
-	info.pNext = nil
-	info.stage = stage
-	info.module = shaderModule
-	info.pName = entry
+	info := vk.PipelineShaderStageCreateInfo {
+		sType  = .PIPELINE_SHADER_STAGE_CREATE_INFO,
+		stage  = stage,
+		module = shaderModule,
+		pName  = entry,
+	}
 	return info
 }
