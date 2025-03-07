@@ -10,6 +10,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+
       - uses: actions/setup-node@v4.1.0
         with:
           node-version: "23"
@@ -24,3 +25,19 @@ jobs:
 
       - name: "Verify built site"
         run: test website/build
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v2
+        with:
+          path: website/build  # Path to your build folder
+
+  deploy:
+    needs: docusaurus-build  # Ensure this runs after the build job
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+
+    steps:
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v2
