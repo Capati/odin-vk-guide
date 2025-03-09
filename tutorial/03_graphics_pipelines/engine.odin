@@ -641,9 +641,7 @@ engine_init_triangle_pipeline :: proc(self: ^Engine) -> (ok: bool) {
 			&self.triangle_pipeline_layout,
 		),
 	) or_return
-	defer if !ok {
-		vk.DestroyPipelineLayout(self.vk_device, self.triangle_pipeline_layout, nil)
-	}
+    deletion_queue_push(self.main_deletion_queue, self.triangle_pipeline_layout)
 
 	builder := pipeline_builder_create_default()
 
@@ -670,8 +668,6 @@ engine_init_triangle_pipeline :: proc(self: ^Engine) -> (ok: bool) {
 
 	// Finally build the pipeline
 	self.triangle_pipeline = pipeline_builder_build(&builder, self.vk_device) or_return
-
-	deletion_queue_push(self.main_deletion_queue, self.triangle_pipeline_layout)
 	deletion_queue_push(self.main_deletion_queue, self.triangle_pipeline)
 
 	return true
