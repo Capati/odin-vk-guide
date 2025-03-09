@@ -42,7 +42,8 @@ The guide is separated into multiple sections for code organization.
 - **[Chapter 0](/category/0-project-setup)** - Setting up the guide initial code
 - **[Chapter 1](/category/1-initializing-vulkan)** - Vulkan initialization and render loop
   setup. (Draws a flashing clear color)
-- **Chapter 2** - Vulkan compute shaders and drawing (Uses a compute shader to draw)
+- **[Chapter 2](/category/2-drawing-with-compute)** - Vulkan compute shaders and drawing (Uses
+  a compute shader to draw)
 - **Chapter 3** - Vulkan mesh drawing (Draws meshes using the graphics pipeline)
 - **Chapter 4** - Textures and better descriptor set management
-- **Chapter 5** - Full GLTF scene loading and high performance rendering.
+- **Chapter 5** - Full GLTF scene loading and high performance rendering
