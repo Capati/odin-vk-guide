@@ -49,47 +49,26 @@ create_shader_module :: proc(
 	return shader, true
 }
 
+
 MAX_SHADER_STAGES :: #config(MAX_SHADER_STAGES, 4)
 
 Shader_Stages :: sa.Small_Array(MAX_SHADER_STAGES, vk.PipelineShaderStageCreateInfo)
 
 Pipeline_Builder :: struct {
-	shader_stages:                 Shader_Stages,
-	input_assembly:                vk.PipelineInputAssemblyStateCreateInfo,
-	rasterizer:                    vk.PipelineRasterizationStateCreateInfo,
-	color_blend_attachment:        vk.PipelineColorBlendAttachmentState,
-	multisampling:                 vk.PipelineMultisampleStateCreateInfo,
-	pipeline_layout:               vk.PipelineLayout,
-	depth_stencil:                 vk.PipelineDepthStencilStateCreateInfo,
-	render_info:                   vk.PipelineRenderingCreateInfo,
-	color_attachment_format:       vk.Format,
-	vertex_binding_descriptions:   [dynamic]vk.VertexInputBindingDescription,
-	vertex_attribute_descriptions: [dynamic]vk.VertexInputAttributeDescription,
-	tessellation_state:            vk.PipelineTessellationStateCreateInfo,
-	base_pipeline:                 vk.Pipeline,
-	base_pipeline_index:           i32,
-	flags:                         vk.PipelineCreateFlags,
-	allocator:                     runtime.Allocator,
-	initialized:                   bool,
-}
-
-pipeline_builder_init :: proc(self: ^Pipeline_Builder, allocator := context.allocator) {
-	assert(self != nil)
-	self.vertex_binding_descriptions = make([dynamic]vk.VertexInputBindingDescription, allocator)
-	self.vertex_attribute_descriptions = make(
-		[dynamic]vk.VertexInputAttributeDescription,
-		allocator,
-	)
-	self.allocator = allocator
-	pipeline_builder_clear(self)
-	self.initialized = true
-}
-
-pipeline_builder_destroy :: proc(self: ^Pipeline_Builder) {
-	assert(self != nil)
-	context.allocator = self.allocator
-	delete(self.vertex_binding_descriptions)
-	delete(self.vertex_attribute_descriptions)
+	shader_stages:           Shader_Stages,
+	input_assembly:          vk.PipelineInputAssemblyStateCreateInfo,
+	rasterizer:              vk.PipelineRasterizationStateCreateInfo,
+	color_blend_attachment:  vk.PipelineColorBlendAttachmentState,
+	multisampling:           vk.PipelineMultisampleStateCreateInfo,
+	pipeline_layout:         vk.PipelineLayout,
+	depth_stencil:           vk.PipelineDepthStencilStateCreateInfo,
+	render_info:             vk.PipelineRenderingCreateInfo,
+	color_attachment_format: vk.Format,
+	tessellation_state:      vk.PipelineTessellationStateCreateInfo,
+	base_pipeline:           vk.Pipeline,
+	base_pipeline_index:     i32,
+	flags:                   vk.PipelineCreateFlags,
+	allocator:               runtime.Allocator,
 }
 
 // Clear all of the structs we need back to `0` with their correct `sType`.
@@ -97,47 +76,23 @@ pipeline_builder_clear :: proc(self: ^Pipeline_Builder) {
 	assert(self != nil)
 
 	self.input_assembly = {
-		sType                  = .PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-		topology               = .TRIANGLE_LIST,
-		primitiveRestartEnable = false,
+		sType = .PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
 	}
 
 	self.rasterizer = {
-		sType                   = .PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-		depthClampEnable        = false,
-		rasterizerDiscardEnable = false,
-		polygonMode             = .FILL,
-		cullMode                = {.BACK},
-		frontFace               = .CLOCKWISE,
-		depthBiasEnable         = false,
-		lineWidth               = 1.0,
-	}
-
-	self.color_blend_attachment = {
-		blendEnable    = false,
-		colorWriteMask = {.R, .G, .B, .A},
+		sType = .PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
 	}
 
 	self.multisampling = {
-		sType                = .PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-		rasterizationSamples = {._1},
-		sampleShadingEnable  = false,
-		minSampleShading     = 1.0,
+		sType = .PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
 	}
 
 	self.depth_stencil = {
-		sType                 = .PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-		depthTestEnable       = true,
-		depthWriteEnable      = true,
-		depthCompareOp        = .LESS,
-		depthBoundsTestEnable = false,
-		stencilTestEnable     = false,
+		sType = .PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
 	}
 
 	self.render_info = {
-		sType                   = .PIPELINE_RENDERING_CREATE_INFO,
-		colorAttachmentCount    = 1,
-		pColorAttachmentFormats = &self.color_attachment_format,
+		sType = .PIPELINE_RENDERING_CREATE_INFO,
 	}
 
 	self.tessellation_state = {
@@ -145,23 +100,24 @@ pipeline_builder_clear :: proc(self: ^Pipeline_Builder) {
 	}
 
 	sa.clear(&self.shader_stages)
-	clear(&self.vertex_binding_descriptions)
-	clear(&self.vertex_attribute_descriptions)
 	self.pipeline_layout = {}
 	self.base_pipeline = {}
 	self.base_pipeline_index = -1
 	self.flags = {}
 }
 
-pipeline_builder_build_pipeline :: proc(
+pipeline_builder_create_default :: proc() -> (builder: Pipeline_Builder) {
+	pipeline_builder_clear(&builder)
+	return
+}
+
+pipeline_builder_build :: proc(
 	self: ^Pipeline_Builder,
 	device: vk.Device,
 ) -> (
 	pipeline: vk.Pipeline,
 	ok: bool,
 ) #optional_ok {
-	ensure(self.initialized, "Pipeline builder not initialized")
-
 	// Make viewport state from our stored viewport and scissor.
 	// At the moment we wont support multiple viewports or scissors
 	viewport_state := vk.PipelineViewportStateCreateInfo {
@@ -182,11 +138,7 @@ pipeline_builder_build_pipeline :: proc(
 
 	// Completely clear `VertexInputStateCreateInfo`, as we have no need for it
 	vertex_input_info := vk.PipelineVertexInputStateCreateInfo {
-		sType                           = .PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-		vertexBindingDescriptionCount   = u32(len(self.vertex_binding_descriptions)),
-		pVertexBindingDescriptions      = raw_data(self.vertex_binding_descriptions[:]),
-		vertexAttributeDescriptionCount = u32(len(self.vertex_attribute_descriptions)),
-		pVertexAttributeDescriptions    = raw_data(self.vertex_attribute_descriptions[:]),
+		sType = .PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
 	}
 
 	dynamic_states := [?]vk.DynamicState{.VIEWPORT, .SCISSOR}
@@ -238,12 +190,21 @@ pipeline_builder_add_shader :: proc(
 	sa.push(&self.shader_stages, create_info)
 }
 
+pipeline_builder_set_shaders :: proc(
+	self: ^Pipeline_Builder,
+	vertex_shader, fragment_shader: vk.ShaderModule,
+) {
+	pipeline_builder_add_shader(self, vertex_shader, {.VERTEX})
+	pipeline_builder_add_shader(self, fragment_shader, {.FRAGMENT})
+}
+
 pipeline_builder_set_input_topology :: proc(
 	self: ^Pipeline_Builder,
 	topology: vk.PrimitiveTopology,
 	primitive_restart_enable: bool = false,
 ) {
 	self.input_assembly.topology = topology
+	// we are not going to use primitive restart on the entire tutorial so leave it on false
 	self.input_assembly.primitiveRestartEnable = b32(primitive_restart_enable)
 }
 
@@ -376,22 +337,6 @@ pipeline_builder_disable_depth_test :: proc(self: ^Pipeline_Builder) {
 	self.depth_stencil.back = {}
 	self.depth_stencil.minDepthBounds = 0.0
 	self.depth_stencil.maxDepthBounds = 1.0
-}
-
-pipeline_builder_set_vertex_input :: proc(
-	self: ^Pipeline_Builder,
-	binding: u32,
-	stride: u32,
-	input_rate: vk.VertexInputRate,
-	attributes: []vk.VertexInputAttributeDescription,
-) {
-	binding_desc := vk.VertexInputBindingDescription {
-		binding   = binding,
-		stride    = stride,
-		inputRate = input_rate,
-	}
-	append(&self.vertex_binding_descriptions, binding_desc)
-	append(&self.vertex_attribute_descriptions, ..attributes)
 }
 
 pipeline_builder_set_tessellation :: proc(self: ^Pipeline_Builder, patch_control_points: u32) {

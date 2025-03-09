@@ -57,8 +57,8 @@ We have already drawn with compute shaders, but in this chapter, we will use the
 capabilities of a GPU to draw meshes using the rasterizer systems and the normal graphics
 pipeline.
 
-- [ ] The graphics pipeline
-- [ ] Setting up render pipeline
+- [x] The graphics pipeline
+- [x] Setting up render pipeline
 - [ ] Mesh buffers
 - [ ] Mesh Loading
 - [ ] Blending

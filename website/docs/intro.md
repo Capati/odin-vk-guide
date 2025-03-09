@@ -44,6 +44,7 @@ The guide is separated into multiple sections for code organization.
   setup. (Draws a flashing clear color)
 - **[Chapter 2](/category/2-drawing-with-compute)** - Vulkan compute shaders and drawing (Uses
   a compute shader to draw)
-- **Chapter 3** - Vulkan mesh drawing (Draws meshes using the graphics pipeline)
+- **[Chapter 3](/category/3-graphics-pipelines)** - Vulkan mesh drawing (Draws meshes using
+  the graphics pipeline)
 - **Chapter 4** - Textures and better descriptor set management
 - **Chapter 5** - Full GLTF scene loading and high performance rendering
