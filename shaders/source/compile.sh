@@ -14,7 +14,7 @@ fi
 
 # Check for watch argument
 watch_mode=false
-if [ "$1" = "true" ]; then
+if [ "$1" = "watch" ]; then
     watch_mode=true
 fi
 
