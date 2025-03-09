@@ -601,8 +601,7 @@ engine_init_triangle_pipeline :: proc(self: ^Engine) -> (ok: bool) {
     // Use the triangle layout we created
     builder.pipeline_layout = self.triangle_pipeline_layout
     // Add the vertex and pixel shaders to the pipeline
-    pipeline_builder_add_shader(&builder, triangle_frag_shader, {.FRAGMENT})
-    pipeline_builder_add_shader(&builder, triangle_vert_shader, {.VERTEX})
+    pipeline_builder_set_shaders(&builder, triangle_vert_shader, triangle_frag_shader)
     // It will draw triangles
     pipeline_builder_set_input_topology(&builder, .TRIANGLE_LIST)
     // Filled triangles
