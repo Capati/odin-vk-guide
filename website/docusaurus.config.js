@@ -58,7 +58,7 @@ const config = {
 					// Please change this to your repo.
 					// Remove this to remove the "edit this page" links.
 					editUrl:
-						'https://github.com/Capati/odin-vk-guide/website/',
+						'https://github.com/Capati/odin-vk-guide/edit/main/website',
 				},
 				blog: false,
 				theme: {
