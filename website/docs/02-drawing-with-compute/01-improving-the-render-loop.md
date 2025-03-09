@@ -232,12 +232,12 @@ resources when destroying the rest of frame data.
 
 ```odin
 engine_draw :: proc(self: ^Engine) -> (ok: bool) {
-    render_fence := engine_get_current_frame(self).render_fence
+    frame := engine_get_current_frame(self)
 
     // Wait until the gpu has finished rendering the last frame. Timeout of 1 second
-    vk_check(vk.WaitForFences(self.vk_device, 1, &render_fence, true, max(u64))) or_return
+    vk_check(vk.WaitForFences(self.vk_device, 1, &frame.render_fence, true, 1e9)) or_return
 
-    deletion_queue_flush(engine_get_current_frame(self).deletion_queue)
+    deletion_queue_flush(frame.deletion_queue)
 
     // Other code ---
 }
@@ -547,10 +547,10 @@ image uses, but its going to be useful.
 
 When creating the image itself, we need to send the image info and an alloc info to VMA. VMA
 will do the vulkan create calls for us and directly give us the vulkan image. The interesting
-thing in here is Usage and the required memory flags. With VMA_MEMORY_USAGE_GPU_ONLY usage, we
-are letting VMA know that this is a gpu texture that wont ever be accessed from CPU, which lets
-it put it into gpu VRAM. To make extra sure of that, we are also setting `.DEVICE_LOCAL` as a
-memory flag. This is a flag that only gpu-side VRAM has, and guarantees the fastest access.
+thing in here is Usage and the required memory flags. With `.Gpu_Only` usage, we are letting
+VMA know that this is a gpu texture that wont ever be accessed from CPU, which lets it put it
+into gpu VRAM. To make extra sure of that, we are also setting `.DEVICE_LOCAL` as a memory
+flag. This is a flag that only gpu-side VRAM has, and guarantees the fastest access.
 
 In vulkan, there are multiple memory regions we can allocate images and buffers from. PC
 implementations with dedicated GPUs will generally have a cpu ram region, a GPU Vram region,
@@ -658,7 +658,7 @@ engine_draw_background(self, cmd) or_return
 transition_image(cmd, self.draw_image.image, .GENERAL, .TRANSFER_SRC_OPTIMAL)
 transition_image(
     cmd,
-    self.swapchain_images[swapchain_image_index],
+    self.swapchain_images[frame.swapchain_image_index],
     .UNDEFINED,
     .TRANSFER_DST_OPTIMAL,
 )
@@ -667,7 +667,7 @@ transition_image(
 copy_image_to_image(
     cmd,
     self.draw_image.image,
-    self.swapchain_images[swapchain_image_index],
+    self.swapchain_images[frame.swapchain_image_index],
     self.draw_extent,
     self.vkb.swapchain.extent,
 )
@@ -675,18 +675,18 @@ copy_image_to_image(
 // Set swapchain image layout to Attachment Optimal so we can draw it
 transition_image(
     cmd,
-    self.swapchain_images[swapchain_image_index],
+    self.swapchain_images[frame.swapchain_image_index],
     .TRANSFER_DST_OPTIMAL,
     .COLOR_ATTACHMENT_OPTIMAL,
 )
 
 // Draw imgui into the swapchain image
-engine_draw_imgui(self, cmd, self.swapchain_image_views[swapchain_image_index])
+engine_draw_imgui(self, cmd, self.swapchain_image_views[frame.swapchain_image_index])
 
 // Set swapchain image layout to Present so we can show it on the screen
 transition_image(
     cmd,
-    self.swapchain_images[swapchain_image_index],
+    self.swapchain_images[frame.swapchain_image_index],
     .COLOR_ATTACHMENT_OPTIMAL,
     .PRESENT_SRC_KHR,
 )

@@ -2,34 +2,27 @@ package vk_guide
 
 // Core
 import "base:runtime"
+import sa "core:container/small_array"
 
 // Vendor
 import vk "vendor:vulkan"
 
+MAX_BOUND_DESCRIPTOR_SETS :: 8
+
+Descriptor_Sets :: sa.Small_Array(MAX_BOUND_DESCRIPTOR_SETS, vk.DescriptorSetLayoutBinding)
+
 Descriptor_Layout_Builder :: struct {
-	bindings:  [dynamic]vk.DescriptorSetLayoutBinding,
-	allocator: runtime.Allocator,
-}
-
-descriptor_layout_builder_init :: proc(
-	self: ^Descriptor_Layout_Builder,
-	allocator := context.allocator,
-) {
-	self.bindings.allocator = allocator
-	self.allocator = allocator
-}
-
-descriptor_layout_builder_destroy :: proc(self: ^Descriptor_Layout_Builder) {
-	context.allocator = self.allocator
-	delete(self.bindings)
+	bindings: Descriptor_Sets,
 }
 
 descriptor_layout_builder_add_binding :: proc(
 	self: ^Descriptor_Layout_Builder,
 	binding: u32,
 	type: vk.DescriptorType,
+	loc := #caller_location,
 ) {
-	assert(self.allocator.data != nil, "Descriptor Layout Builder not initialized!")
+	// Assert that we haven't exceeded the maximum number of descriptor sets
+	assert(sa.len(self.bindings) < MAX_BOUND_DESCRIPTOR_SETS, loc = loc)
 
 	new_binding := vk.DescriptorSetLayoutBinding {
 		binding         = binding,
@@ -37,11 +30,11 @@ descriptor_layout_builder_add_binding :: proc(
 		descriptorType  = type,
 	}
 
-	append(&self.bindings, new_binding)
+	sa.push(&self.bindings, new_binding)
 }
 
 descriptor_layout_builder_clear :: proc(self: ^Descriptor_Layout_Builder) {
-	clear(&self.bindings)
+	sa.clear(&self.bindings)
 }
 
 descriptor_layout_builder_build :: proc(
@@ -50,19 +43,26 @@ descriptor_layout_builder_build :: proc(
 	shader_stages: vk.ShaderStageFlags,
 	pNext: rawptr = nil,
 	flags: vk.DescriptorSetLayoutCreateFlags = {},
+	loc := #caller_location,
 ) -> (
 	set: vk.DescriptorSetLayout,
 	ok: bool,
 ) #optional_ok {
-	for &b in self.bindings {
+	assert(device != nil, "Invalid Vulkan device handle.", loc = loc)
+	assert(shader_stages != {}, "No shader stages specified for descriptor set layout.", loc = loc)
+	assert(sa.len(self.bindings) > 0, "No bindings added to descriptor layout builder.", loc = loc)
+
+	bindings := sa.slice(&self.bindings)
+
+	for &b in bindings {
 		b.stageFlags += shader_stages
 	}
 
 	info := vk.DescriptorSetLayoutCreateInfo {
 		sType        = .DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
 		pNext        = pNext,
-		bindingCount = u32(len(self.bindings)),
-		pBindings    = raw_data(self.bindings),
+		bindingCount = u32(len(bindings)),
+		pBindings    = raw_data(bindings),
 		flags        = flags,
 	}
 

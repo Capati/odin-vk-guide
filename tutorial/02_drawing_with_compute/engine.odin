@@ -5,8 +5,6 @@ import intr "base:intrinsics"
 import "base:runtime"
 import "core:log"
 import "core:math"
-import la "core:math/linalg"
-import "core:time"
 
 // Vendor
 import "vendor:glfw"
@@ -23,21 +21,22 @@ TITLE :: "2. Drawing with Compute"
 DEFAULT_WINDOW_EXTENT :: vk.Extent2D{800, 600} // Default window size in pixels
 
 Frame_Data :: struct {
-	command_pool:        vk.CommandPool,
-	main_command_buffer: vk.CommandBuffer,
-	swapchain_semaphore: vk.Semaphore,
-	render_semaphore:    vk.Semaphore,
-	render_fence:        vk.Fence,
-	deletion_queue:      ^Deletion_Queue,
+	command_pool:          vk.CommandPool,
+	main_command_buffer:   vk.CommandBuffer,
+	swapchain_semaphore:   vk.Semaphore,
+	render_semaphore:      vk.Semaphore,
+	swapchain_image_index: u32,
+	render_fence:          vk.Fence,
+	deletion_queue:        ^Deletion_Queue,
 }
 
 FRAME_OVERLAP :: 2
 
 Compute_Push_Constants :: struct {
-	data1: la.Vector4f32,
-	data2: la.Vector4f32,
-	data3: la.Vector4f32,
-	data4: la.Vector4f32,
+	data1: [4]f32,
+	data2: [4]f32,
+	data3: [4]f32,
+	data4: [4]f32,
 }
 
 Compute_Effect_Kind :: enum {
@@ -53,58 +52,62 @@ Compute_Effect :: struct {
 }
 
 Engine :: struct {
-	// Platform
+	// Initialization state
 	is_initialized:               bool,
 	stop_rendering:               bool,
-	window_extent:                vk.Extent2D,
+
+	// Core Vulkan handles
+	vk_instance:                  vk.Instance,
+	vk_physical_device:           vk.PhysicalDevice,
+	vk_device:                    vk.Device,
+	vk_surface:                   vk.SurfaceKHR,
+
+	// Window and display
 	window:                       glfw.WindowHandle,
+	window_extent:                vk.Extent2D,
+
+	// Queue management
+	graphics_queue:               vk.Queue,
+	graphics_queue_family:        u32,
 
 	// Swapchain
+	vk_swapchain:                 vk.SwapchainKHR,
 	swapchain_format:             vk.Format,
 	swapchain_images:             []vk.Image,
 	swapchain_image_views:        []vk.ImageView,
 
-	// Frame data
+	// Frame management
 	frames:                       [FRAME_OVERLAP]Frame_Data,
 	frame_number:                 int,
 
-	// Queue
-	graphics_queue:               vk.Queue,
-	graphics_queue_family:        u32,
-
-	// GPU Context
-	vk_instance:                  vk.Instance,
-	vk_physical_device:           vk.PhysicalDevice,
-	vk_surface:                   vk.SurfaceKHR,
-	vk_device:                    vk.Device,
-	vk_swapchain:                 vk.SwapchainKHR,
-	vkb:                          struct {
-		instance:        ^vkb.Instance,
-		physical_device: ^vkb.Physical_Device,
-		swapchain:       ^vkb.Swapchain,
-		device:          ^vkb.Device,
-	},
-
-	// Resources
+	// Memory management
+	vma_allocator:                vma.Allocator,
 	main_deletion_queue:          ^Deletion_Queue,
+
+	// Descriptor management
 	global_descriptor_allocator:  Descriptor_Allocator,
 	draw_image_descriptors:       vk.DescriptorSet,
 	draw_image_descriptor_layout: vk.DescriptorSetLayout,
 
-	// Draw resources
+	// Rendering resources
 	draw_image:                   Allocated_Image,
 	draw_extent:                  vk.Extent2D,
 	gradient_pipeline_layout:     vk.PipelineLayout,
 	background_effects:           [Compute_Effect_Kind]Compute_Effect,
 	current_background_effect:    Compute_Effect_Kind,
 
-	// Immediate submit structures
-	im_fence:                     vk.Fence,
-	im_command_buffer:            vk.CommandBuffer,
-	im_command_pool:              vk.CommandPool,
+	// Immediate submission
+	// im_command_pool:              vk.CommandPool,
+	// im_command_buffer:            vk.CommandBuffer,
+	// im_fence:                     vk.Fence,
 
-	// Internal
-	vma_allocator:                vma.Allocator,
+	// Helper libraries
+	vkb:                          struct {
+		instance:        ^vkb.Instance,
+		physical_device: ^vkb.Physical_Device,
+		device:          ^vkb.Device,
+		swapchain:       ^vkb.Swapchain,
+	},
 }
 
 // Initializes everything in the engine.
@@ -148,6 +151,45 @@ engine_init :: proc(self: ^Engine) -> (ok: bool) {
 	self.is_initialized = true
 
 	return true
+}
+
+// Shuts down the engine.
+engine_cleanup :: proc(self: ^Engine) {
+	if !self.is_initialized {
+		return
+	}
+
+	// Make sure the gpu has stopped doing its things
+	ensure(vk.DeviceWaitIdle(self.vk_device) == .SUCCESS)
+
+	for &frame in self.frames {
+		vk.DestroyCommandPool(self.vk_device, frame.command_pool, nil)
+
+		// Destroy sync objects
+		vk.DestroyFence(self.vk_device, frame.render_fence, nil)
+		vk.DestroySemaphore(self.vk_device, frame.render_semaphore, nil)
+		vk.DestroySemaphore(self.vk_device, frame.swapchain_semaphore, nil)
+
+		// Flush and destroy the peer frame deletion queue
+		deletion_queue_destroy(frame.deletion_queue)
+	}
+
+	// Flush and destroy the global deletion queue
+	deletion_queue_destroy(self.main_deletion_queue)
+
+	im.destroy_context()
+
+	vma.destroy_allocator(self.vma_allocator)
+
+	engine_destroy_swapchain(self)
+
+	vk.DestroySurfaceKHR(self.vk_instance, self.vk_surface, nil)
+	vkb.destroy_device(self.vkb.device)
+
+	vkb.destroy_physical_device(self.vkb.physical_device)
+	vkb.destroy_instance(self.vkb.instance)
+
+	destroy_window(self.window)
 }
 
 engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
@@ -272,8 +314,6 @@ engine_create_swapchain :: proc(self: ^Engine, width, height: u32) -> (ok: bool)
 		{format = self.swapchain_format, colorSpace = .SRGB_NONLINEAR},
 	)
 	vkb.swapchain_builder_set_present_mode(&builder, .FIFO)
-	vkb.swapchain_builder_set_present_mode(&builder, .IMMEDIATE)
-	vkb.swapchain_builder_set_present_mode(&builder, .MAILBOX)
 	vkb.swapchain_builder_set_desired_extent(&builder, width, height)
 	vkb.swapchain_builder_add_image_usage_flags(&builder, {.TRANSFER_DST})
 
@@ -284,6 +324,13 @@ engine_create_swapchain :: proc(self: ^Engine, width, height: u32) -> (ok: bool)
 	self.swapchain_image_views = vkb.swapchain_get_image_views(self.vkb.swapchain) or_return
 
 	return true
+}
+
+engine_destroy_swapchain :: proc(self: ^Engine) {
+	vkb.destroy_swapchain(self.vkb.swapchain)
+	vkb.swapchain_destroy_image_views(self.vkb.swapchain, self.swapchain_image_views)
+	delete(self.swapchain_image_views)
+	delete(self.swapchain_images)
 }
 
 engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
@@ -377,17 +424,17 @@ engine_init_commands :: proc(self: ^Engine) -> (ok: bool) {
 		) or_return
 	}
 
-	vk_check(
-		vk.CreateCommandPool(self.vk_device, &command_pool_info, nil, &self.im_command_pool),
-	) or_return
+	// vk_check(
+	// 	vk.CreateCommandPool(self.vk_device, &command_pool_info, nil, &self.im_command_pool),
+	// ) or_return
 
-	// Allocate the command buffer for immediate submits
-	cmd_alloc_info := command_buffer_allocate_info(self.im_command_pool)
-	vk_check(
-		vk.AllocateCommandBuffers(self.vk_device, &cmd_alloc_info, &self.im_command_buffer),
-	) or_return
+	// // Allocate the command buffer for immediate submits
+	// cmd_alloc_info := command_buffer_allocate_info(self.im_command_pool)
+	// vk_check(
+	// 	vk.AllocateCommandBuffers(self.vk_device, &cmd_alloc_info, &self.im_command_buffer),
+	// ) or_return
 
-	deletion_queue_push(self.main_deletion_queue, self.im_command_pool)
+	// deletion_queue_push(self.main_deletion_queue, self.im_command_pool)
 
 	return true
 }
@@ -423,9 +470,9 @@ engine_init_sync_structures :: proc(self: ^Engine) -> (ok: bool) {
 		) or_return
 	}
 
-	vk_check(vk.CreateFence(self.vk_device, &fence_create_info, nil, &self.im_fence)) or_return
+	// vk_check(vk.CreateFence(self.vk_device, &fence_create_info, nil, &self.im_fence)) or_return
 
-	deletion_queue_push(self.main_deletion_queue, self.im_fence)
+	// deletion_queue_push(self.main_deletion_queue, self.im_fence)
 
 	return true
 }
@@ -444,12 +491,8 @@ engine_init_descriptors :: proc(self: ^Engine) -> (ok: bool) {
 		descriptor_allocator_destroy_pool(&self.global_descriptor_allocator, self.vk_device)
 	}
 
-	ta := context.temp_allocator
-	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
-
 	// Make the descriptor set layout for our compute draw
 	builder: Descriptor_Layout_Builder
-	descriptor_layout_builder_init(&builder, ta)
 	descriptor_layout_builder_add_binding(&builder, 0, .STORAGE_IMAGE)
 	self.draw_image_descriptor_layout = descriptor_layout_builder_build(
 		&builder,
@@ -489,7 +532,7 @@ engine_init_descriptors :: proc(self: ^Engine) -> (ok: bool) {
 	return true
 }
 
-init_background_pipelines :: proc(self: ^Engine) -> (ok: bool) {
+engine_init_background_pipelines :: proc(self: ^Engine) -> (ok: bool) {
 	push_constant := vk.PushConstantRange {
 		offset     = 0,
 		size       = size_of(Compute_Push_Constants),
@@ -513,12 +556,16 @@ init_background_pipelines :: proc(self: ^Engine) -> (ok: bool) {
 		),
 	) or_return
 
-	GRADIENT_COLOR_SPV :: #load("./../../shaders/gradient_color.spv")
-	gradient_color_shader := create_shader_module(self.vk_device, GRADIENT_COLOR_SPV) or_return
+	gradient_color_shader := create_shader_module(
+		self.vk_device,
+		#load("./../../shaders/compiled/gradient_color.comp.spv"),
+	) or_return
 	defer vk.DestroyShaderModule(self.vk_device, gradient_color_shader, nil)
 
-	SKY_SPV :: #load("./../../shaders/sky.spv")
-	sky_shader := create_shader_module(self.vk_device, SKY_SPV) or_return
+	sky_shader := create_shader_module(
+		self.vk_device,
+		#load("./../../shaders/compiled/sky.comp.spv"),
+	) or_return
 	defer vk.DestroyShaderModule(self.vk_device, sky_shader, nil)
 
 	stage_info := vk.PipelineShaderStageCreateInfo {
@@ -583,38 +630,41 @@ init_background_pipelines :: proc(self: ^Engine) -> (ok: bool) {
 }
 
 engine_init_pipelines :: proc(self: ^Engine) -> (ok: bool) {
-	return init_background_pipelines(self)
-}
-
-Immediate_Proc :: #type proc(engine: ^Engine, cmd: vk.CommandBuffer)
-
-engine_immediate_submit :: proc(self: ^Engine, im_proc: Immediate_Proc) -> (ok: bool) {
-	vk_check(vk.ResetFences(self.vk_device, 1, &self.im_fence)) or_return
-	vk_check(vk.ResetCommandBuffer(self.im_command_buffer, {})) or_return
-
-	cmd := self.im_command_buffer
-
-	cmd_begin_info := command_buffer_begin_info({.ONE_TIME_SUBMIT})
-
-	vk_check(vk.BeginCommandBuffer(cmd, &cmd_begin_info)) or_return
-
-	im_proc(self, cmd)
-
-	vk_check(vk.EndCommandBuffer(cmd)) or_return
-
-	cmd_info := command_buffer_submit_info(cmd)
-	submit_info := submit_info(&cmd_info, nil, nil)
-
-	// Submit command buffer to the queue and execute it.
-	//  `render_fence` will now block until the graphic commands finish execution
-	vk_check(vk.QueueSubmit2(self.graphics_queue, 1, &submit_info, self.im_fence)) or_return
-
-	vk_check(vk.WaitForFences(self.vk_device, 1, &self.im_fence, true, 9999999999)) or_return
-
+	engine_init_background_pipelines(self) or_return
 	return true
 }
 
+// Immediate_Proc :: #type proc(engine: ^Engine, cmd: vk.CommandBuffer)
+
+// engine_immediate_submit :: proc(self: ^Engine, im_proc: Immediate_Proc) -> (ok: bool) {
+// 	vk_check(vk.ResetFences(self.vk_device, 1, &self.im_fence)) or_return
+// 	vk_check(vk.ResetCommandBuffer(self.im_command_buffer, {})) or_return
+
+// 	cmd := self.im_command_buffer
+
+// 	cmd_begin_info := command_buffer_begin_info({.ONE_TIME_SUBMIT})
+
+// 	vk_check(vk.BeginCommandBuffer(cmd, &cmd_begin_info)) or_return
+
+// 	im_proc(self, cmd)
+
+// 	vk_check(vk.EndCommandBuffer(cmd)) or_return
+
+// 	cmd_info := command_buffer_submit_info(cmd)
+// 	submit_info := submit_info(&cmd_info, nil, nil)
+
+// 	// Submit command buffer to the queue and execute it.
+// 	//  `render_fence` will now block until the graphic commands finish execution
+// 	vk_check(vk.QueueSubmit2(self.graphics_queue, 1, &submit_info, self.im_fence)) or_return
+
+// 	vk_check(vk.WaitForFences(self.vk_device, 1, &self.im_fence, true, 9999999999)) or_return
+
+// 	return true
+// }
+
 engine_init_imgui :: proc(self: ^Engine) -> (ok: bool) {
+	im.CHECKVERSION()
+
 	// 1: create descriptor pool for IMGUI
 	// The size of the pool is very oversize, but it's copied from imgui demo itself.
 	pool_sizes := []vk.DescriptorPoolSize {
@@ -641,8 +691,6 @@ engine_init_imgui :: proc(self: ^Engine) -> (ok: bool) {
 
 	imgui_pool: vk.DescriptorPool
 	vk_check(vk.CreateDescriptorPool(self.vk_device, &pool_info, nil, &imgui_pool)) or_return
-
-	im.CHECKVERSION()
 
 	// This initializes the core structures of imgui
 	im.create_context()
@@ -681,11 +729,8 @@ engine_init_imgui :: proc(self: ^Engine) -> (ok: bool) {
 	im_vk.init(&init_info) or_return
 	defer if !ok {im_vk.shutdown()}
 
-	im_vk.create_fonts_texture() or_return
-	defer if !ok {im_vk.destroy_fonts_texture()}
-
+	// Remember the LIFO queue, make sure the order of push is correct
 	deletion_queue_push(self.main_deletion_queue, imgui_pool)
-	deletion_queue_push(self.main_deletion_queue, im_vk.destroy_fonts_texture)
 	deletion_queue_push(self.main_deletion_queue, im_vk.shutdown)
 	deletion_queue_push(self.main_deletion_queue, im_glfw.shutdown)
 
@@ -696,36 +741,209 @@ engine_get_current_frame :: #force_inline proc(self: ^Engine) -> ^Frame_Data #no
 	return &self.frames[self.frame_number % FRAME_OVERLAP]
 }
 
+engine_draw_background :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool) {
+	effect := &self.background_effects[self.current_background_effect]
+
+	// Bind the compute pipeline
+	vk.CmdBindPipeline(cmd, .COMPUTE, effect.pipeline)
+
+	// Bind the descriptor set containing the draw image
+	vk.CmdBindDescriptorSets(
+		cmd,
+		.COMPUTE,
+		self.gradient_pipeline_layout,
+		0,
+		1,
+		&self.draw_image_descriptors,
+		0,
+		nil,
+	)
+
+	// Push constants
+	vk.CmdPushConstants(
+		cmd,
+		self.gradient_pipeline_layout,
+		{.COMPUTE},
+		0,
+		size_of(Compute_Push_Constants),
+		&effect.data,
+	)
+
+	// Dispatch the compute shader
+	vk.CmdDispatch(
+		cmd,
+		u32(math.ceil_f32(f32(self.draw_extent.width) / 16.0)),
+		u32(math.ceil_f32(f32(self.draw_extent.height) / 16.0)),
+		1,
+	)
+
+	return true
+}
+
+engine_draw_imgui :: proc(
+	self: ^Engine,
+	cmd: vk.CommandBuffer,
+	target_view: vk.ImageView,
+) -> (
+	ok: bool,
+) {
+	color_attachment := attachment_info(target_view, nil, .GENERAL)
+	render_info := rendering_info(self.vkb.swapchain.extent, &color_attachment, nil)
+
+	vk.CmdBeginRendering(cmd, &render_info)
+
+	im_vk.render_draw_data(im.get_draw_data(), cmd)
+
+	vk.CmdEndRendering(cmd)
+
+	return
+}
+
+// Draw loop.
+@(require_results)
+engine_draw :: proc(self: ^Engine) -> (ok: bool) {
+	// Steps:
+	//
+	// 1. Waits for the GPU to finish the previous frame
+	// 2. Acquires the next swapchain image
+	// 3. Records rendering commands into a command buffer
+	// 4. Submits the command buffer to the GPU for execution
+	// 5. Presents the rendered image to the screen
+
+	frame := engine_get_current_frame(self)
+
+	// Wait until the gpu has finished rendering the last frame. Timeout of 1 second
+	vk_check(vk.WaitForFences(self.vk_device, 1, &frame.render_fence, true, 1e9)) or_return
+
+	deletion_queue_flush(frame.deletion_queue)
+
+	vk_check(vk.ResetFences(self.vk_device, 1, &frame.render_fence)) or_return
+
+	// Request image from the swapchain
+	vk_check(
+		vk.AcquireNextImageKHR(
+			self.vk_device,
+			self.vk_swapchain,
+			1e9,
+			frame.swapchain_semaphore,
+			0,
+			&frame.swapchain_image_index,
+		),
+	) or_return
+
+	// The the current command buffer, naming it cmd for shorter writing
+	cmd := frame.main_command_buffer
+
+	// Now that we are sure that the commands finished executing, we can safely
+	// reset the command buffer to begin recording again.
+	vk_check(vk.ResetCommandBuffer(cmd, {})) or_return
+
+	// Begin the command buffer recording. We will use this command buffer exactly
+	// once, so we want to let vulkan know that
+	cmd_begin_info := command_buffer_begin_info({.ONE_TIME_SUBMIT})
+
+	self.draw_extent.width = self.draw_image.image_extent.width
+	self.draw_extent.height = self.draw_image.image_extent.height
+
+	// Start the command buffer recording
+	vk_check(vk.BeginCommandBuffer(cmd, &cmd_begin_info)) or_return
+
+	// Transition our main draw image into general layout so we can write into it
+	// we will overwrite it all so we dont care about what was the older layout
+	transition_image(cmd, self.draw_image.image, .UNDEFINED, .GENERAL)
+
+	// Clear the image
+	engine_draw_background(self, cmd) or_return
+
+	// Transition the draw image and the swapchain image into their correct transfer layouts
+	transition_image(cmd, self.draw_image.image, .GENERAL, .TRANSFER_SRC_OPTIMAL)
+	transition_image(
+		cmd,
+		self.swapchain_images[frame.swapchain_image_index],
+		.UNDEFINED,
+		.TRANSFER_DST_OPTIMAL,
+	)
+
+	// ExecEte a copy from the draw image into the swapchain
+	copy_image_to_image(
+		cmd,
+		self.draw_image.image,
+		self.swapchain_images[frame.swapchain_image_index],
+		self.draw_extent,
+		self.vkb.swapchain.extent,
+	)
+
+	// Set swapchain image layout to Attachment Optimal so we can draw it
+	transition_image(
+		cmd,
+		self.swapchain_images[frame.swapchain_image_index],
+		.TRANSFER_DST_OPTIMAL,
+		.COLOR_ATTACHMENT_OPTIMAL,
+	)
+
+	// Draw imgui into the swapchain image
+	engine_draw_imgui(self, cmd, self.swapchain_image_views[frame.swapchain_image_index])
+
+	// Set swapchain image layout to Present so we can show it on the screen
+	transition_image(
+		cmd,
+		self.swapchain_images[frame.swapchain_image_index],
+		.COLOR_ATTACHMENT_OPTIMAL,
+		.PRESENT_SRC_KHR,
+	)
+
+	// Finalize the command buffer (we can no longer add commands, but it can now be executed)
+	vk_check(vk.EndCommandBuffer(cmd)) or_return
+
+	// Prepare the submission to the queue. we want to wait on the
+	// `swapchain_semaphore`, as that semaphore is signaled when the swapchain is
+	// ready we will signal the `render_semaphore`, to signal that rendering has
+	// finished
+
+	cmd_info := command_buffer_submit_info(cmd)
+	signal_info := semaphore_submit_info({.ALL_GRAPHICS}, frame.render_semaphore)
+	wait_info := semaphore_submit_info({.COLOR_ATTACHMENT_OUTPUT_KHR}, frame.swapchain_semaphore)
+
+	submit := submit_info(&cmd_info, &signal_info, &wait_info)
+
+	// Submit command buffer to the queue and execute it. _renderFence will now
+	// block until the graphic commands finish execution
+	vk_check(vk.QueueSubmit2(self.graphics_queue, 1, &submit, frame.render_fence)) or_return
+
+	// Prepare present
+	//
+	// this will put the image we just rendered to into the visible window. we
+	// want to wait on the `render_semaphore` for that, as its necessary that
+	// drawing commands have finished before the image is displayed to the user
+	present_info := vk.PresentInfoKHR {
+		sType              = .PRESENT_INFO_KHR,
+		pSwapchains        = &self.vk_swapchain,
+		swapchainCount     = 1,
+		pWaitSemaphores    = &frame.render_semaphore,
+		waitSemaphoreCount = 1,
+		pImageIndices      = &frame.swapchain_image_index,
+	}
+
+	vk_check(vk.QueuePresentKHR(self.graphics_queue, &present_info)) or_return
+
+	// Increase the number of frames drawn
+	self.frame_number += 1
+
+	return true
+}
+
 // Run main loop.
 @(require_results)
 engine_run :: proc(self: ^Engine) -> (ok: bool) {
-	// Get monitor info
-	monitor_info := get_primary_monitor_info()
-	log.debugf("Monitor refresh rate: %d Hz", monitor_info.refresh_rate)
-
-	// Main loop with frame limiting
-	previous_time := glfw.GetTime()
-
 	log.info("Entering main loop...")
 
-	for !glfw.WindowShouldClose(self.window) {
+	loop: for !glfw.WindowShouldClose(self.window) {
 		glfw.PollEvents()
 
 		// Do not draw if we are minimized
 		if self.stop_rendering {
 			glfw.WaitEvents() // Wait to avoid endless spinning
-			previous_time = glfw.GetTime() // Reset time after waiting
-			continue
-		}
-
-		current_time := glfw.GetTime()
-		delta_time := current_time - previous_time
-
-		if delta_time < monitor_info.frame_time_target {
-			// Sleep to limit FPS
-			sleep_time := monitor_info.frame_time_target - delta_time
-			time.sleep(time.Duration(sleep_time * 1e9)) // Convert to nanoseconds
-			current_time = glfw.GetTime()
+			continue loop
 		}
 
 		// imgui new frame
@@ -771,267 +989,11 @@ engine_run :: proc(self: ^Engine) -> (ok: bool) {
 		//make imgui calculate internal draw structures
 		im.render()
 
+		// Submit the frame with the latest input data
 		engine_draw(self) or_return
-
-		previous_time = current_time
 	}
 
 	log.info("Exiting...")
 
 	return true
-}
-
-engine_draw_background :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool) {
-	// // Make a clear-color from frame number. This will flash with a 120 frame period.
-	// flash := abs(math.sin(f32(self.frame_number) / 120.0))
-	// clear_value := vk.ClearColorValue {
-	// 	float32 = {0.0, 0.0, flash, 1.0},
-	// }
-
-	// clear_range := image_subresource_range({.COLOR})
-
-	// // Clear image
-	// vk.CmdClearColorImage(cmd, self.draw_image.image, .GENERAL, &clear_value, 1, &clear_range)
-
-	effect := &self.background_effects[self.current_background_effect]
-
-	// Bind the gradient drawing compute pipeline
-	vk.CmdBindPipeline(cmd, .COMPUTE, effect.pipeline)
-
-	// Bind the descriptor set containing the draw image for the compute pipeline
-	vk.CmdBindDescriptorSets(
-		cmd,
-		.COMPUTE,
-		self.gradient_pipeline_layout,
-		0,
-		1,
-		&self.draw_image_descriptors,
-		0,
-		nil,
-	)
-
-	vk.CmdPushConstants(
-		cmd,
-		self.gradient_pipeline_layout,
-		{.COMPUTE},
-		0,
-		size_of(Compute_Push_Constants),
-		&effect.data,
-	)
-
-	// Execute the compute pipeline dispatch. We are using 16x16 workgroup size so
-	// we need to divide by it
-	vk.CmdDispatch(
-		cmd,
-		u32(math.ceil_f32(f32(self.draw_extent.width) / 16.0)),
-		u32(math.ceil_f32(f32(self.draw_extent.height) / 16.0)),
-		1,
-	)
-
-	return true
-}
-
-// Draw loop.
-@(require_results)
-engine_draw :: proc(self: ^Engine) -> (ok: bool) {
-	// Steps:
-	//
-	// 1. Waits for the GPU to finish the previous frame
-	// 2. Acquires the next swapchain image
-	// 3. Records rendering commands into a command buffer
-	// 4. Submits the command buffer to the GPU for execution
-	// 5. Presents the rendered image to the screen
-
-	render_fence := engine_get_current_frame(self).render_fence
-
-	// Wait until the gpu has finished rendering the last frame. Timeout of 1 second
-	vk_check(vk.WaitForFences(self.vk_device, 1, &render_fence, true, max(u64))) or_return
-
-	deletion_queue_flush(engine_get_current_frame(self).deletion_queue)
-
-	vk_check(vk.ResetFences(self.vk_device, 1, &render_fence)) or_return
-
-	swapchain_semaphore := engine_get_current_frame(self).swapchain_semaphore
-
-	// Request image from the swapchain
-	swapchain_image_index: u32 = ---
-	vk_check(
-		vk.AcquireNextImageKHR(
-			self.vk_device,
-			self.vk_swapchain,
-			max(u64),
-			swapchain_semaphore,
-			0,
-			&swapchain_image_index,
-		),
-	) or_return
-
-	// The the current command buffer, naming it cmd for shorter writing
-	cmd := engine_get_current_frame(self).main_command_buffer
-
-	// Now that we are sure that the commands finished executing, we can safely
-	// reset the command buffer to begin recording again.
-	vk_check(vk.ResetCommandBuffer(cmd, {})) or_return
-
-	// Begin the command buffer recording. We will use this command buffer exactly
-	// once, so we want to let vulkan know that
-	cmd_begin_info := command_buffer_begin_info({.ONE_TIME_SUBMIT})
-
-	self.draw_extent.width = self.draw_image.image_extent.width
-	self.draw_extent.height = self.draw_image.image_extent.height
-
-	// Start the command buffer recording
-	vk_check(vk.BeginCommandBuffer(cmd, &cmd_begin_info)) or_return
-
-	// Transition our main draw image into general layout so we can write into it
-	// we will overwrite it all so we dont care about what was the older layout
-	transition_image(cmd, self.draw_image.image, .UNDEFINED, .GENERAL)
-
-	// Clear the image
-	engine_draw_background(self, cmd) or_return
-
-	// Transition the draw image and the swapchain image into their correct transfer layouts
-	transition_image(cmd, self.draw_image.image, .GENERAL, .TRANSFER_SRC_OPTIMAL)
-	transition_image(
-		cmd,
-		self.swapchain_images[swapchain_image_index],
-		.UNDEFINED,
-		.TRANSFER_DST_OPTIMAL,
-	)
-
-	// ExecEte a copy from the draw image into the swapchain
-	copy_image_to_image(
-		cmd,
-		self.draw_image.image,
-		self.swapchain_images[swapchain_image_index],
-		self.draw_extent,
-		self.vkb.swapchain.extent,
-	)
-
-	// Set swapchain image layout to Attachment Optimal so we can draw it
-	transition_image(
-		cmd,
-		self.swapchain_images[swapchain_image_index],
-		.TRANSFER_DST_OPTIMAL,
-		.COLOR_ATTACHMENT_OPTIMAL,
-	)
-
-	// Draw imgui into the swapchain image
-	engine_draw_imgui(self, cmd, self.swapchain_image_views[swapchain_image_index])
-
-	// Set swapchain image layout to Present so we can show it on the screen
-	transition_image(
-		cmd,
-		self.swapchain_images[swapchain_image_index],
-		.COLOR_ATTACHMENT_OPTIMAL,
-		.PRESENT_SRC_KHR,
-	)
-
-	// Finalize the command buffer (we can no longer add commands, but it can now be executed)
-	vk_check(vk.EndCommandBuffer(cmd)) or_return
-
-	// Prepare the submission to the queue. we want to wait on the
-	// `swapchain_semaphore`, as that semaphore is signaled when the swapchain is
-	// ready we will signal the `render_semaphore`, to signal that rendering has
-	// finished
-
-	cmd_info := command_buffer_submit_info(cmd)
-
-	wait_info := semaphore_submit_info({.COLOR_ATTACHMENT_OUTPUT_KHR}, swapchain_semaphore)
-
-	render_semaphore := engine_get_current_frame(self).render_semaphore
-
-	signal_info := semaphore_submit_info({.ALL_GRAPHICS}, render_semaphore)
-
-	submit := submit_info(&cmd_info, &signal_info, &wait_info)
-
-	// Submit command buffer to the queue and execute it. _renderFence will now
-	// block until the graphic commands finish execution
-	vk_check(vk.QueueSubmit2(self.graphics_queue, 1, &submit, render_fence)) or_return
-
-	// Prepare present
-	//
-	// this will put the image we just rendered to into the visible window. we
-	// want to wait on the `render_semaphore` for that, as its necessary that
-	// drawing commands have finished before the image is displayed to the user
-	present_info := vk.PresentInfoKHR {
-		sType              = .PRESENT_INFO_KHR,
-		pSwapchains        = &self.vk_swapchain,
-		swapchainCount     = 1,
-		pWaitSemaphores    = &render_semaphore,
-		waitSemaphoreCount = 1,
-		pImageIndices      = &swapchain_image_index,
-	}
-
-	vk_check(vk.QueuePresentKHR(self.graphics_queue, &present_info)) or_return
-
-	// Increase the number of frames drawn
-	self.frame_number += 1
-
-	return true
-}
-
-engine_draw_imgui :: proc(
-	self: ^Engine,
-	cmd: vk.CommandBuffer,
-	target_view: vk.ImageView,
-) -> (
-	ok: bool,
-) {
-	color_attachment := attachment_info(target_view, nil, .GENERAL)
-	render_info := rendering_info(self.vkb.swapchain.extent, &color_attachment, nil)
-
-	vk.CmdBeginRendering(cmd, &render_info)
-
-	im_vk.render_draw_data(im.get_draw_data(), cmd)
-
-	vk.CmdEndRendering(cmd)
-
-	return
-}
-
-// Shuts down the engine.
-engine_cleanup :: proc(self: ^Engine) {
-	if !self.is_initialized {
-		return
-	}
-
-	// Make sure the gpu has stopped doing its things
-	ensure(vk.DeviceWaitIdle(self.vk_device) == .SUCCESS)
-
-	for &frame in self.frames {
-		vk.DestroyCommandPool(self.vk_device, frame.command_pool, nil)
-
-		// Destroy sync objects
-		vk.DestroyFence(self.vk_device, frame.render_fence, nil)
-		vk.DestroySemaphore(self.vk_device, frame.render_semaphore, nil)
-		vk.DestroySemaphore(self.vk_device, frame.swapchain_semaphore, nil)
-
-		// Flush and destroy the peer frame deletion queue
-		deletion_queue_destroy(frame.deletion_queue)
-	}
-
-	// Flush and destroy the global deletion queue
-	deletion_queue_destroy(self.main_deletion_queue)
-
-	im.destroy_context()
-
-	vma.destroy_allocator(self.vma_allocator)
-
-	engine_destroy_swapchain(self)
-
-	vk.DestroySurfaceKHR(self.vk_instance, self.vk_surface, nil)
-	vkb.destroy_device(self.vkb.device)
-
-	vkb.destroy_physical_device(self.vkb.physical_device)
-	vkb.destroy_instance(self.vkb.instance)
-
-	destroy_window(self.window)
-}
-
-engine_destroy_swapchain :: proc(self: ^Engine) {
-	vkb.destroy_swapchain(self.vkb.swapchain)
-	vkb.swapchain_destroy_image_views(self.vkb.swapchain, self.swapchain_image_views)
-	delete(self.swapchain_image_views)
-	delete(self.swapchain_images)
 }

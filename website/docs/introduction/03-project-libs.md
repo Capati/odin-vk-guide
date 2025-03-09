@@ -9,12 +9,14 @@ For the Vulkan engine, we use specific folders and filenames:
 
 ````text
 ├───build
-│   ├───assets
+│   └───assets
 ├───libs
 │   ├───imgui
 │   ├───vkb
 │   └───vma
 ├───shaders
+│   ├───compiled
+│   └───source
 ├───src
 └───tutorial
     ├───01_initializing_vulkan

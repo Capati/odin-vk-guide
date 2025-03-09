@@ -11,9 +11,10 @@ need into our Frame_Data structure. We add the new members into the struct.
 
 ```odin
 Frame_Data :: struct {
-    swapchain_semaphore: vk.Semaphore,
-    render_semaphore:    vk.Semaphore,
-    render_fence:        vk.Fence,
+    swapchain_semaphore:   vk.Semaphore,
+    render_semaphore:      vk.Semaphore,
+    render_fence:          vk.Fence,
+    swapchain_image_index: u32,
 }
 ```
 
@@ -103,11 +104,11 @@ Let's start the draw loop by first waiting for the GPU to have finished its work
 
 ```odin
 engine_draw :: proc(self: ^Engine) -> (ok: bool) {
-    render_fence := engine_get_current_frame(self).render_fence
+    frame := engine_get_current_frame(self)
 
     // Wait until the gpu has finished rendering the last frame. Timeout of 1 second
-    vk_check(vk.WaitForFences(self.vk_device, 1, &render_fence, true, 1000000000)) or_return
-    vk_check(vk.ResetFences(self.vk_device, 1, &render_fence)) or_return
+    vk_check(vk.WaitForFences(self.vk_device, 1, &frame.render_fence, true, 1e9)) or_return
+    vk_check(vk.ResetFences(self.vk_device, 1, &frame.render_fence)) or_return
 
     return true
 }
@@ -125,16 +126,14 @@ Next, we are going to request an image index from the swapchain.
 
 ```odin
 // Request image from the swapchain
-swapchain_semaphore := engine_get_current_frame(self).swapchain_semaphore
-swapchain_image_index: u32 = ---
 vk_check(
     vk.AcquireNextImageKHR(
         self.vk_device,
         self.vk_swapchain,
-        1000000000,
-        swapchain_semaphore,
+        1e9,
+        frame.swapchain_semaphore,
         0,
-        &swapchain_image_index,
+        &frame.swapchain_image_index,
     ),
 ) or_return
 ```
@@ -175,7 +174,7 @@ Back to `engine_draw()`, we start by resetting the command buffer and restarting
 
 ```odin
 // The the current command buffer, naming it cmd for shorter writing
-cmd := engine_get_current_frame(self).main_command_buffer
+cmd := frame.main_command_buffer
 
 // Now that we are sure that the commands finished executing, we can safely reset the
 // command buffer to begin recording again.
@@ -314,7 +313,7 @@ import "core:math"
 
 ```odin title="engine_draw"
 // Make the swapchain image into writeable mode before rendering
-transition_image(cmd, self.swapchain_images[swapchain_image_index], .UNDEFINED, .GENERAL)
+transition_image(cmd, self.swapchain_images[frame.swapchain_image_index], .UNDEFINED, .GENERAL)
 
 // Make a clear-color from frame number. This will flash with a 120 frame period.
 flash := abs(math.sin(f32(self.frame_number) / 120.0))
@@ -327,7 +326,7 @@ clear_range := image_subresource_range({.COLOR})
 // Clear image
 vk.CmdClearColorImage(
     cmd,
-    self.swapchain_images[swapchain_image_index],
+    self.swapchain_images[frame.swapchain_image_index],
     .GENERAL,
     &clear_value,
     1,
@@ -335,7 +334,12 @@ vk.CmdClearColorImage(
 )
 
 // Make the swapchain image into presentable mode
-transition_image(cmd, self.swapchain_images[swapchain_image_index], .GENERAL, .PRESENT_SRC_KHR)
+transition_image(
+    cmd,
+    self.swapchain_images[frame.swapchain_image_index],
+    .GENERAL,
+    .PRESENT_SRC_KHR,
+)
 
 // Finalize the command buffer (we can no longer add commands, but it can now be executed)
 vk_check(vk.EndCommandBuffer(cmd)) or_return
@@ -446,21 +450,20 @@ Here are the links to spec for those structures:
 With the initializers made, we can write the submit itself.
 
 ```odin
-// Prepare the submission to the queue. we want to wait on the _presentSemaphore, as that
-// semaphore is signaled when the swapchain is ready we will signal the _renderSemaphore,
-// to signal that rendering has finished
-
-render_semaphore := engine_get_current_frame(self).render_semaphore
+// Prepare the submission to the queue. we want to wait on the
+// `swapchain_semaphore`, as that semaphore is signaled when the swapchain is
+// ready we will signal the `render_semaphore`, to signal that rendering has
+// finished
 
 cmd_info := command_buffer_submit_info(cmd)
-signal_info := semaphore_submit_info({.ALL_GRAPHICS}, render_semaphore)
-wait_info := semaphore_submit_info({.COLOR_ATTACHMENT_OUTPUT_KHR}, swapchain_semaphore)
+signal_info := semaphore_submit_info({.ALL_GRAPHICS}, frame.render_semaphore)
+wait_info := semaphore_submit_info({.COLOR_ATTACHMENT_OUTPUT_KHR}, frame.swapchain_semaphore)
 
 submit := submit_info(&cmd_info, &signal_info, &wait_info)
 
-// Submit command buffer to the queue and execute it. _renderFence will now block until the
-// graphic commands finish execution
-vk_check(vk.QueueSubmit2(self.graphics_queue, 1, &submit, render_fence)) or_return
+// Submit command buffer to the queue and execute it. _renderFence will now
+// block until the graphic commands finish execution
+vk_check(vk.QueueSubmit2(self.graphics_queue, 1, &submit, frame.render_fence)) or_return
 ```
 
 We first create each of the different info structs needed, and then we call `vk.QueueSubmit2`.
@@ -482,16 +485,16 @@ Last thing we need on the frame is to present the image we have just drawn into 
 ```odin
 // Prepare present
 //
-// This will put the image we just rendered to into the visible window. we want to wait on
-// the render_semaphore for that, as its necessary that drawing commands have finished
-// before the image is displayed to the user
+// this will put the image we just rendered to into the visible window. we
+// want to wait on the `render_semaphore` for that, as its necessary that
+// drawing commands have finished before the image is displayed to the user
 present_info := vk.PresentInfoKHR {
     sType              = .PRESENT_INFO_KHR,
     pSwapchains        = &self.vk_swapchain,
     swapchainCount     = 1,
-    pWaitSemaphores    = &render_semaphore,
+    pWaitSemaphores    = &frame.render_semaphore,
     waitSemaphoreCount = 1,
-    pImageIndices      = &swapchain_image_index,
+    pImageIndices      = &frame.swapchain_image_index,
 }
 
 vk_check(vk.QueuePresentKHR(self.graphics_queue, &present_info)) or_return
