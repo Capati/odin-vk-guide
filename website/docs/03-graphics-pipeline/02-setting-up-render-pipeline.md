@@ -629,11 +629,11 @@ engine_init_triangle_pipeline :: proc(self: ^Engine) -> (ok: bool) {
 With the pipeline built, we can draw our triangle as part of the command buffer we create every
 frame.
 
-The compute shader we run for the background needed to draw into GENERAL image layout, but when
-doing geometry rendering, we need to use COLOR_ATTACHMENT_OPTIMAL. It is possible to draw into
-GENERAL layout with graphics pipelines, but its lower performance and the validation layers
-will complain. We will create a new procedure, `engine_draw_geometry()`, to hold these graphics
-commands.
+The compute shader we run for the background needed to draw into `GENERAL` image layout, but
+when doing geometry rendering, we need to use `COLOR_ATTACHMENT_OPTIMAL`. It is possible to
+draw into `GENERAL` layout with graphics pipelines, but its lower performance and the
+validation layers will complain. We will create a new procedure, `engine_draw_geometry()`, to
+hold these graphics commands.
 
 Lets update the draw loop first.
 
