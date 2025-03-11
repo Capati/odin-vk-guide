@@ -4,6 +4,11 @@ This repository contains the tutorial code and website for [odin-vk-guide][], an
 adaptation of the popular [vkguide.dev][] Vulkan tutorial. Full credit for the original content
 goes to the authors of vkguide.dev.
 
+> [!WARNING]
+> This project is a **work in progress**. Until all sections are complete, I may need to
+> refactor earlier chapters. If you're reading a chapter that has been affected by changes,
+> please revisit previous sections to understand what has been updated.
+
 ## Table of Contents
 
 - [Progress](#progress)
