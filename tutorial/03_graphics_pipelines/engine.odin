@@ -5,6 +5,7 @@ import intr "base:intrinsics"
 import "base:runtime"
 import "core:log"
 import "core:math"
+import la "core:math/linalg"
 import "core:time"
 
 // Vendor
@@ -90,6 +91,11 @@ Engine :: struct {
 	draw_image_descriptors:       vk.DescriptorSet,
 	draw_image_descriptor_layout: vk.DescriptorSetLayout,
 
+	// immediate submit structures
+	imm_fence:                    vk.Fence,
+	imm_command_buffer:           vk.CommandBuffer,
+	imm_command_pool:             vk.CommandPool,
+
 	// Rendering resources
 	draw_image:                   Allocated_Image,
 	draw_extent:                  vk.Extent2D,
@@ -98,6 +104,9 @@ Engine :: struct {
 	current_background_effect:    Compute_Effect_Kind,
 	triangle_pipeline_layout:     vk.PipelineLayout,
 	triangle_pipeline:            vk.Pipeline,
+	mesh_pipeline_layout:         vk.PipelineLayout,
+	mesh_pipeline:                vk.Pipeline,
+	rectangle:                    GPU_Mesh_Buffers,
 
 	// Helper libraries
 	vkb:                          struct {
@@ -108,9 +117,15 @@ Engine :: struct {
 	},
 }
 
+@(private)
+g_logger: log.Logger
+
 // Initializes everything in the engine.
 engine_init :: proc(self: ^Engine) -> (ok: bool) {
 	ensure(self != nil, "Invalid 'Engine' object")
+
+	// Store the current logger for later use inside callbacks
+	g_logger = context.logger
 
 	self.window_extent = DEFAULT_WINDOW_EXTENT
 
@@ -144,6 +159,8 @@ engine_init :: proc(self: ^Engine) -> (ok: bool) {
 	engine_init_pipelines(self) or_return
 
 	engine_init_imgui(self) or_return
+
+	engine_init_default_data(self) or_return
 
 	// Everything went fine
 	self.is_initialized = true
@@ -191,9 +208,6 @@ engine_cleanup :: proc(self: ^Engine) {
 }
 
 engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
-	ta := context.temp_allocator
-	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
-
 	// Instance
 	instance_builder := vkb.init_instance_builder() or_return
 	defer vkb.destroy_instance_builder(&instance_builder)
@@ -202,8 +216,34 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 	vkb.instance_require_api_version(&instance_builder, vk.API_VERSION_1_3)
 
 	when ODIN_DEBUG {
+		ta := context.temp_allocator
+		runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
+
 		vkb.instance_request_validation_layers(&instance_builder)
-		vkb.instance_use_default_debug_messenger(&instance_builder)
+
+		default_debug_callback :: proc "system" (
+			message_severity: vk.DebugUtilsMessageSeverityFlagsEXT,
+			message_types: vk.DebugUtilsMessageTypeFlagsEXT,
+			p_callback_data: ^vk.DebugUtilsMessengerCallbackDataEXT,
+			p_user_data: rawptr,
+		) -> b32 {
+			context = runtime.default_context()
+			context.logger = g_logger
+
+			if .WARNING in message_severity {
+				log.warnf("[%v]: %s", message_types, p_callback_data.pMessage)
+			} else if .ERROR in message_severity {
+				log.errorf("[%v]: %s", message_types, p_callback_data.pMessage)
+				runtime.debug_trap()
+			} else {
+				log.infof("[%v]: %s", message_types, p_callback_data.pMessage)
+			}
+
+			return false // Applications must return false here
+		}
+
+		vkb.instance_set_debug_callback(&instance_builder, default_debug_callback)
+		vkb.instance_set_debug_callback_user_data_pointer(&instance_builder, self)
 
 		VK_LAYER_LUNARG_MONITOR :: "VK_LAYER_LUNARG_monitor"
 
@@ -220,10 +260,10 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 	}
 
 	self.vkb.instance = vkb.build_instance(&instance_builder) or_return
+	self.vk_instance = self.vkb.instance.handle
 	defer if !ok {
 		vkb.destroy_instance(self.vkb.instance)
 	}
-	self.vk_instance = self.vkb.instance.handle
 
 	// Surface
 	vk_check(
@@ -235,13 +275,17 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 
 	// Vulkan 1.2 features
 	features_12 := vk.PhysicalDeviceVulkan12Features {
+		// Allows shaders to directly access buffer memory using GPU addresses
 		bufferDeviceAddress = true,
+		// Enables dynamic indexing of descriptors and more flexible descriptor usage
 		descriptorIndexing  = true,
 	}
 
 	// Vulkan 1.3 features
 	features_13 := vk.PhysicalDeviceVulkan13Features {
+		// Eliminates the need for render pass objects, simplifying rendering setup
 		dynamicRendering = true,
+		// Provides improved synchronization primitives with simpler usage patterns
 		synchronization2 = true,
 	}
 
@@ -257,20 +301,20 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 	vkb.selector_set_surface(&selector, self.vk_surface)
 
 	self.vkb.physical_device = vkb.select_physical_device(&selector) or_return
+	self.vk_physical_device = self.vkb.physical_device.handle
 	defer if !ok {
 		vkb.destroy_physical_device(self.vkb.physical_device)
 	}
-	self.vk_physical_device = self.vkb.physical_device.handle
 
 	// Create the final vulkan device
 	device_builder := vkb.init_device_builder(self.vkb.physical_device) or_return
 	defer vkb.destroy_device_builder(&device_builder)
 
 	self.vkb.device = vkb.build_device(&device_builder) or_return
+	self.vk_device = self.vkb.device.handle
 	defer if !ok {
 		vkb.destroy_device(self.vkb.device)
 	}
-	self.vk_device = self.vkb.device.handle
 
 	// use vk-bootstrap to get a Graphics queue
 	self.graphics_queue = vkb.device_get_queue(self.vkb.device, .Graphics) or_return
@@ -423,6 +467,18 @@ engine_init_commands :: proc(self: ^Engine) -> (ok: bool) {
 		) or_return
 	}
 
+	vk_check(
+		vk.CreateCommandPool(self.vk_device, &command_pool_info, nil, &self.imm_command_pool),
+	) or_return
+
+	// Allocate the command buffer for immediate submits
+	cmd_alloc_info := command_buffer_allocate_info(self.imm_command_pool)
+	vk_check(
+		vk.AllocateCommandBuffers(self.vk_device, &cmd_alloc_info, &self.imm_command_buffer),
+	) or_return
+
+	deletion_queue_push(self.main_deletion_queue, self.imm_command_pool)
+
 	return true
 }
 
@@ -456,6 +512,10 @@ engine_init_sync_structures :: proc(self: ^Engine) -> (ok: bool) {
 			),
 		) or_return
 	}
+
+	vk_check(vk.CreateFence(self.vk_device, &fence_create_info, nil, &self.imm_fence)) or_return
+
+	deletion_queue_push(self.main_deletion_queue, self.imm_fence)
 
 	return true
 }
@@ -641,7 +701,7 @@ engine_init_triangle_pipeline :: proc(self: ^Engine) -> (ok: bool) {
 			&self.triangle_pipeline_layout,
 		),
 	) or_return
-    deletion_queue_push(self.main_deletion_queue, self.triangle_pipeline_layout)
+	deletion_queue_push(self.main_deletion_queue, self.triangle_pipeline_layout)
 
 	builder := pipeline_builder_create_default()
 
@@ -673,13 +733,111 @@ engine_init_triangle_pipeline :: proc(self: ^Engine) -> (ok: bool) {
 	return true
 }
 
-engine_init_pipelines :: proc(self: ^Engine) -> (ok: bool) {
-	engine_init_background_pipeline(self) or_return
-	engine_init_triangle_pipeline(self) or_return
+engine_init_mesh_pipeline :: proc(self: ^Engine) -> (ok: bool) {
+	triangle_frag_shader := create_shader_module(
+		self.vk_device,
+		#load("./../../shaders/compiled/colored_triangle.frag.spv"),
+	) or_return
+	defer vk.DestroyShaderModule(self.vk_device, triangle_frag_shader, nil)
+
+	triangle_vertex_shader := create_shader_module(
+		self.vk_device,
+		#load("./../../shaders/compiled/colored_triangle_mesh.vert.spv"),
+	) or_return
+	defer vk.DestroyShaderModule(self.vk_device, triangle_vertex_shader, nil)
+
+	buffer_range := vk.PushConstantRange {
+		offset     = 0,
+		size       = size_of(GPU_Draw_Push_Constants),
+		stageFlags = {.VERTEX},
+	}
+
+	pipeline_layout_info := pipeline_layout_create_info()
+	pipeline_layout_info.pPushConstantRanges = &buffer_range
+	pipeline_layout_info.pushConstantRangeCount = 1
+
+	vk_check(
+		vk.CreatePipelineLayout(
+			self.vk_device,
+			&pipeline_layout_info,
+			nil,
+			&self.mesh_pipeline_layout,
+		),
+	) or_return
+	deletion_queue_push(self.main_deletion_queue, self.mesh_pipeline_layout)
+
+	builder := pipeline_builder_create_default()
+
+	// Use the triangle layout we created
+	builder.pipeline_layout = self.mesh_pipeline_layout
+	// Add the vertex and pixel shaders to the pipeline
+	pipeline_builder_set_shaders(&builder, triangle_vertex_shader, triangle_frag_shader)
+	// It will draw triangles
+	pipeline_builder_set_input_topology(&builder, .TRIANGLE_LIST)
+	// Filled triangles
+	pipeline_builder_set_polygon_mode(&builder, .FILL)
+	// No backface culling
+	pipeline_builder_set_cull_mode(&builder, vk.CullModeFlags_NONE, .CLOCKWISE)
+	// No multisampling
+	pipeline_builder_set_multisampling_none(&builder)
+	// No blending
+	pipeline_builder_disable_blending(&builder)
+	// No depth testing
+	pipeline_builder_disable_depth_test(&builder)
+
+	// Connect the image format we will draw into, from draw image
+	pipeline_builder_set_color_attachment_format(&builder, self.draw_image.image_format)
+	pipeline_builder_set_depth_attachment_format(&builder, .UNDEFINED)
+
+	// Finally build the pipeline
+	self.mesh_pipeline = pipeline_builder_build(&builder, self.vk_device) or_return
+	deletion_queue_push(self.main_deletion_queue, self.mesh_pipeline)
+
 	return true
 }
 
-Immediate_Proc :: #type proc(engine: ^Engine, cmd: vk.CommandBuffer)
+engine_init_pipelines :: proc(self: ^Engine) -> (ok: bool) {
+	// Compute pipelines
+	engine_init_background_pipeline(self) or_return
+
+	// Graphics pipelines
+	engine_init_triangle_pipeline(self) or_return
+	engine_init_mesh_pipeline(self) or_return
+
+	return true
+}
+
+engine_immediate_submit :: proc(
+	self: ^Engine,
+	data: $T,
+	fn: proc(engine: ^Engine, cmd: vk.CommandBuffer, data: T),
+) -> (
+	ok: bool,
+) {
+	vk_check(vk.ResetFences(self.vk_device, 1, &self.imm_fence)) or_return
+	vk_check(vk.ResetCommandBuffer(self.imm_command_buffer, {})) or_return
+
+	cmd := self.imm_command_buffer
+
+	cmd_begin_info := command_buffer_begin_info({.ONE_TIME_SUBMIT})
+
+	vk_check(vk.BeginCommandBuffer(cmd, &cmd_begin_info)) or_return
+
+	fn(self, cmd, data)
+
+	vk_check(vk.EndCommandBuffer(cmd)) or_return
+
+	cmd_info := command_buffer_submit_info(cmd)
+	submit_info := submit_info(&cmd_info, nil, nil)
+
+	// Submit command buffer to the queue and execute it.
+	//  `render_fence` will now block until the graphic commands finish execution
+	vk_check(vk.QueueSubmit2(self.graphics_queue, 1, &submit_info, self.imm_fence)) or_return
+
+	vk_check(vk.WaitForFences(self.vk_device, 1, &self.imm_fence, true, 9999999999)) or_return
+
+	return true
+}
 
 engine_init_imgui :: proc(self: ^Engine) -> (ok: bool) {
 	im.CHECKVERSION()
@@ -751,6 +909,44 @@ engine_init_imgui :: proc(self: ^Engine) -> (ok: bool) {
 	deletion_queue_push(self.main_deletion_queue, imgui_pool)
 	deletion_queue_push(self.main_deletion_queue, im_vk.shutdown)
 	deletion_queue_push(self.main_deletion_queue, im_glfw.shutdown)
+
+	return true
+}
+
+engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
+	// odinfmt: disable
+	rect_vertices := [4]Vertex{
+		{ position = { 0.5, -0.5, 0.0 }, color = { 0.0, 0.0, 0.0, 1.0 }},
+		{ position = { 0.5,  0.5, 0.0 }, color = { 0.5, 0.5, 0.5, 1.0 }},
+		{ position = {-0.5, -0.5, 0.0 }, color = { 1.0, 0.0, 0.0, 1.0 }},
+		{ position = {-0.5,  0.5, 0.0 }, color = { 0.0, 1.0, 0.0, 1.0 }},
+	}
+
+	rect_indices := [6]u32{
+		0, 1, 2,
+		2, 1, 3,
+	}
+	// odinfmt: enable
+
+	self.rectangle = upload_mesh(self, rect_indices[:], rect_vertices[:]) or_return
+
+	// Delete the rectangle data on engine shutdown
+	deletion_queue_push(
+		self.main_deletion_queue,
+		Allocated_Buffer_Resource {
+			self.rectangle.index_buffer.buffer,
+			self.vma_allocator,
+			self.rectangle.index_buffer.allocation,
+		},
+	)
+	deletion_queue_push(
+		self.main_deletion_queue,
+		Allocated_Buffer_Resource {
+			self.rectangle.vertex_buffer.buffer,
+			self.vma_allocator,
+			self.rectangle.vertex_buffer.allocation,
+		},
+	)
 
 	return true
 }
@@ -980,6 +1176,25 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
 
 	// Launch a draw command to draw 3 vertices
 	vk.CmdDraw(cmd, 3, 1, 0, 0)
+
+	vk.CmdBindPipeline(cmd, .GRAPHICS, self.mesh_pipeline)
+
+	push_constants := GPU_Draw_Push_Constants {
+		world_matrix  = la.MATRIX4F32_IDENTITY,
+		vertex_buffer = self.rectangle.vertex_buffer_address,
+	}
+
+	vk.CmdPushConstants(
+		cmd,
+		self.mesh_pipeline_layout,
+		{.VERTEX},
+		0,
+		size_of(GPU_Draw_Push_Constants),
+		&push_constants,
+	)
+	vk.CmdBindIndexBuffer(cmd, self.rectangle.index_buffer.buffer, 0, .UINT32)
+
+	vk.CmdDrawIndexed(cmd, 6, 1, 0, 0, 0)
 
 	vk.CmdEndRendering(cmd)
 

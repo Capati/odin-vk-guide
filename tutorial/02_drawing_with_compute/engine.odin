@@ -110,9 +110,15 @@ Engine :: struct {
 	},
 }
 
+@(private)
+g_logger: log.Logger
+
 // Initializes everything in the engine.
 engine_init :: proc(self: ^Engine) -> (ok: bool) {
 	ensure(self != nil, "Invalid 'Engine' object")
+
+	// Store the current logger for later use inside callbacks
+	g_logger = context.logger
 
 	self.window_extent = DEFAULT_WINDOW_EXTENT
 
@@ -193,9 +199,6 @@ engine_cleanup :: proc(self: ^Engine) {
 }
 
 engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
-	ta := context.temp_allocator
-	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
-
 	// Instance
 	instance_builder := vkb.init_instance_builder() or_return
 	defer vkb.destroy_instance_builder(&instance_builder)
@@ -204,8 +207,34 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 	vkb.instance_require_api_version(&instance_builder, vk.API_VERSION_1_3)
 
 	when ODIN_DEBUG {
+		ta := context.temp_allocator
+		runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
+
 		vkb.instance_request_validation_layers(&instance_builder)
-		vkb.instance_use_default_debug_messenger(&instance_builder)
+
+		default_debug_callback :: proc "system" (
+			message_severity: vk.DebugUtilsMessageSeverityFlagsEXT,
+			message_types: vk.DebugUtilsMessageTypeFlagsEXT,
+			p_callback_data: ^vk.DebugUtilsMessengerCallbackDataEXT,
+			p_user_data: rawptr,
+		) -> b32 {
+			context = runtime.default_context()
+			context.logger = g_logger
+
+			if .WARNING in message_severity {
+				log.warnf("[%v]: %s", message_types, p_callback_data.pMessage)
+			} else if .ERROR in message_severity {
+				log.errorf("[%v]: %s", message_types, p_callback_data.pMessage)
+				runtime.debug_trap()
+			} else {
+				log.infof("[%v]: %s", message_types, p_callback_data.pMessage)
+			}
+
+			return false // Applications must return false here
+		}
+
+		vkb.instance_set_debug_callback(&instance_builder, default_debug_callback)
+		vkb.instance_set_debug_callback_user_data_pointer(&instance_builder, self)
 
 		VK_LAYER_LUNARG_MONITOR :: "VK_LAYER_LUNARG_monitor"
 
@@ -222,10 +251,10 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 	}
 
 	self.vkb.instance = vkb.build_instance(&instance_builder) or_return
+	self.vk_instance = self.vkb.instance.handle
 	defer if !ok {
 		vkb.destroy_instance(self.vkb.instance)
 	}
-	self.vk_instance = self.vkb.instance.handle
 
 	// Surface
 	vk_check(
@@ -237,13 +266,17 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 
 	// Vulkan 1.2 features
 	features_12 := vk.PhysicalDeviceVulkan12Features {
+		// Allows shaders to directly access buffer memory using GPU addresses
 		bufferDeviceAddress = true,
+		// Enables dynamic indexing of descriptors and more flexible descriptor usage
 		descriptorIndexing  = true,
 	}
 
 	// Vulkan 1.3 features
 	features_13 := vk.PhysicalDeviceVulkan13Features {
+		// Eliminates the need for render pass objects, simplifying rendering setup
 		dynamicRendering = true,
+		// Provides improved synchronization primitives with simpler usage patterns
 		synchronization2 = true,
 	}
 
@@ -259,20 +292,20 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 	vkb.selector_set_surface(&selector, self.vk_surface)
 
 	self.vkb.physical_device = vkb.select_physical_device(&selector) or_return
+	self.vk_physical_device = self.vkb.physical_device.handle
 	defer if !ok {
 		vkb.destroy_physical_device(self.vkb.physical_device)
 	}
-	self.vk_physical_device = self.vkb.physical_device.handle
 
 	// Create the final vulkan device
 	device_builder := vkb.init_device_builder(self.vkb.physical_device) or_return
 	defer vkb.destroy_device_builder(&device_builder)
 
 	self.vkb.device = vkb.build_device(&device_builder) or_return
+	self.vk_device = self.vkb.device.handle
 	defer if !ok {
 		vkb.destroy_device(self.vkb.device)
 	}
-	self.vk_device = self.vkb.device.handle
 
 	// use vk-bootstrap to get a Graphics queue
 	self.graphics_queue = vkb.device_get_queue(self.vkb.device, .Graphics) or_return

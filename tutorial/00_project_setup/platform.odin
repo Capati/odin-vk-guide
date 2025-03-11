@@ -8,9 +8,6 @@ import "core:strings"
 // Vendor
 import "vendor:glfw"
 
-@(private = "file")
-g_logger: log.Logger
-
 glfw_error_callback :: proc "c" (error: i32, description: cstring) {
 	context = runtime.default_context()
 	context.logger = g_logger
@@ -19,9 +16,6 @@ glfw_error_callback :: proc "c" (error: i32, description: cstring) {
 
 @(require_results)
 create_window :: proc(title: string, width, height: u32) -> (window: glfw.WindowHandle, ok: bool) {
-	// Save current logger for use outside of Odin context
-	g_logger = context.logger
-
 	// We initialize GLFW and create a window with it.
 	ensure(bool(glfw.Init()), "Failed to initialize GLFW")
 

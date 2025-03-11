@@ -59,26 +59,7 @@ initialization. We will call those init procedures in order from our `engine_ini
 ```odin
 // Initializes everything in the engine.
 engine_init :: proc(self: ^Engine) -> (ok: bool) {
-    ensure(self != nil, "Invalid 'Engine' object")
-
-    self.window_extent = DEFAULT_WINDOW_EXTENT
-
-    // Create a window using GLFW
-    self.window = create_window(
-        TITLE,
-        self.window_extent.width,
-        self.window_extent.height,
-    ) or_return
-    defer if !ok {
-        destroy_window(self.window)
-    }
-
-    // Set the window user pointer so we can get the engine from callbacks
-    glfw.SetWindowUserPointer(self.window, self)
-
-    // Set window callbacks
-    glfw.SetFramebufferSizeCallback(self.window, callback_framebuffer_size)
-    glfw.SetWindowIconifyCallback(self.window, callback_window_minimize)
+    // Other code ---
 
     engine_init_vulkan(self) or_return
 
@@ -116,16 +97,10 @@ engine_init_sync_structures :: proc(self: ^Engine) -> (ok: bool) {
 Now that our new `engine_init_vulkan` procedure is added, we can start filling it with the code
 needed to create the instance.
 
-```odin title="engine.odin - import 'runtime' at the top"
-// Core
-import "base:runtime"
-```
-
 ```odin
-engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
-    ta := context.temp_allocator
-    runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
+import "base:runtime" // import at the top
 
+engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
     // Make the vulkan instance, with basic debug features
     instance_builder := vkb.init_instance_builder() or_return
     defer vkb.destroy_instance_builder(&instance_builder)
@@ -134,8 +109,34 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
     vkb.instance_require_api_version(&instance_builder, vk.API_VERSION_1_3)
 
     when ODIN_DEBUG {
+        ta := context.temp_allocator
+        runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
+
         vkb.instance_request_validation_layers(&instance_builder)
-        vkb.instance_use_default_debug_messenger(&instance_builder)
+
+        default_debug_callback :: proc "system" (
+            message_severity: vk.DebugUtilsMessageSeverityFlagsEXT,
+            message_types: vk.DebugUtilsMessageTypeFlagsEXT,
+            p_callback_data: ^vk.DebugUtilsMessengerCallbackDataEXT,
+            p_user_data: rawptr,
+        ) -> b32 {
+            context = runtime.default_context()
+            context.logger = g_logger
+
+            if .WARNING in message_severity {
+                log.warnf("[%v]: %s", message_types, p_callback_data.pMessage)
+            } else if .ERROR in message_severity {
+                log.errorf("[%v]: %s", message_types, p_callback_data.pMessage)
+                runtime.debug_trap()
+            } else {
+                log.infof("[%v]: %s", message_types, p_callback_data.pMessage)
+            }
+
+            return false // Applications must return false here
+        }
+
+        vkb.instance_set_debug_callback(&instance_builder, default_debug_callback)
+        vkb.instance_set_debug_callback_user_data_pointer(&instance_builder, self)
 
         VK_LAYER_LUNARG_MONITOR :: "VK_LAYER_LUNARG_monitor"
 
@@ -183,9 +184,28 @@ relatively modern. We will be taking advantage of the features given by that vul
 you are on a old PC/gpu that does not support those features, then you will have to follow the
 older version of this guide, which targets 1.1.
 
-Lastly, we tell the library that we want the debug messenger. This is what catches the log
-messages that the validation layers will output. Because we have no need for a dedicated one,
-we will just let the library use the default one, which outputs to console window.
+Lastly, inside `ODIN_DEBUG`, we configures Vulkan debugging features:
+
+1. **Validation Layers**
+
+    - `vkb.instance_request_validation_layers` enables Vulkan validation layers
+    - These layers perform runtime checks on Vulkan API usage, catching errors and potential issues
+
+2. **Debug Messenger Callback**
+
+    - Defines `default_debug_callback`, a custom procedure to handle debug messages
+    - Message handling based on severity:
+        - `.WARNING`: Logs warnings using `log.warnf`
+        - `.ERROR`: Logs errors using `log.errorf` and triggers `runtime.debug_trap()` to pause
+          execution. The debugger will catch the error thrown and you can move up the call
+          stack to whatever procedure caused the error
+        - Other (typically `.INFO` or `.VERBOSE`): Logs using `log.infof`
+    - Logs include message type and content from `p_callback_data.pMessage`
+    - Configured via:
+        - `vkb.instance_set_debug_callback`: Sets our callback procedure
+        - `vkb.instance_set_debug_callback_user_data_pointer`: Passes `self` (our engine) as
+          user data
+    - Returns `false` as required by Vulkan specification for debug callbacks
 
 :::tip[VK_LAYER_LUNARG_MONITOR]
 
@@ -214,13 +234,17 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 
     // Vulkan 1.2 features
     features_12 := vk.PhysicalDeviceVulkan12Features {
+        // Allows shaders to directly access buffer memory using GPU addresses
         bufferDeviceAddress = true,
+        // Enables dynamic indexing of descriptors and more flexible descriptor usage
         descriptorIndexing  = true,
     }
 
     // Vulkan 1.3 features
     features_13 := vk.PhysicalDeviceVulkan13Features {
+        // Eliminates the need for render pass objects, simplifying rendering setup
         dynamicRendering = true,
+        // Provides improved synchronization primitives with simpler usage patterns
         synchronization2 = true,
     }
 
@@ -241,6 +265,16 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
         vkb.destroy_physical_device(self.vkb.physical_device)
     }
 
+    // Create the final vulkan device
+    device_builder := vkb.init_device_builder(self.vkb.physical_device) or_return
+    defer vkb.destroy_device_builder(&device_builder)
+
+    self.vkb.device = vkb.build_device(&device_builder) or_return
+    self.vk_device = self.vkb.device.handle
+    defer if !ok {
+        vkb.destroy_device(self.vkb.device)
+    }
+
     return true
 }
 ```
@@ -251,13 +285,26 @@ First of all, we need to create a `vk.SurfaceKHR` object from the GLFW window. T
 actual window we will be rendering to, so we need to tell the physical device selector to grab
 a GPU that can render to said window.
 
-We need to enable some features. First some vulkan 1.3 features, those are dynamic rendering,
-and syncronization 2. Those are optional features provided in vulkan 1.3 that change a few
-things. dynamic rendering allows us to completely skip renderpasses/framebuffers (if you want
-to learn about them, they are explained in the old version of vkguide), and also use a new
-upgraded version of the syncronization procedures. We are also going to use the vulkan 1.2
-features `bufferDeviceAddress` and `descriptorIndexing`. Buffer device adress will let us use
-GPU pointers without binding buffers, and descriptorIndexing gives us bindless textures.
+We're enabling several important Vulkan features:
+
+- **Vulkan 1.2 features**
+  - `bufferDeviceAddress`: Allows our shaders to directly access buffer memory using GPU
+    addresses without binding buffers explicitly.
+  - `descriptorIndexing`: Enables bindless textures and more flexible descriptor access
+    patterns.
+
+- **Vulkan 1.3 features**
+  - `dynamicRendering`: Eliminates the need for render pass/framebuffer objects, simplifying
+    our rendering setup.
+  - `synchronization2`: Provides improved synchronization primitives with simpler usage
+    patterns.
+
+Those are optional features provided in vulkan 1.3 that change a few things. dynamic rendering
+allows us to completely skip renderpasses/framebuffers (if you want to learn about them, they
+are explained in the old version of vkguide), and also use a new upgraded version of the
+syncronization procedures. We are also going to use the vulkan 1.2 features
+`bufferDeviceAddress` and `descriptorIndexing`. Buffer device adress will let us use GPU
+pointers without binding buffers, and descriptorIndexing gives us bindless textures.
 
 By giving the `vkb.Physical_Device_Selector` the `vk.PhysicalDeviceVulkan13Features` structure,
 we can tell `vkb` to find a gpu that has those features.
@@ -270,9 +317,7 @@ can find their info here:
 - [Vulkan Spec: 1.2 physical device features](https://registry.khronos.org/vulkan/specs/1.3-extensions/html/chap47.html#VkPhysicalDeviceVulkan12Features)
 - [Vulkan Spec: 1.3 physical device features](https://registry.khronos.org/vulkan/specs/1.3-extensions/html/chap47.html#VkPhysicalDeviceVulkan13Features)
 
-Once we have a `vk.PhysicalDevice`, we can directly build a VkDevice from it.
-
-And at the end, we store the handles in the class.
+Once we have a `vk.PhysicalDevice`, we can directly build a `vk.Device` from it.
 
 That's it, we have initialized Vulkan. We can now start calling Vulkan commands.
 

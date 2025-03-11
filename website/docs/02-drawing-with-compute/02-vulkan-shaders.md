@@ -29,11 +29,22 @@ way.
 
 ## `vk.ShaderModule`
 
-A `vk.ShaderModule` is a processed shader file. We create it from a pre-compiled **SPIR-V**
-file. In our case, we are using **HLSL** (High-Level Shading Language) to write our shaders.
-However, in Vulkan, the driver does not accept shader code in **HLSL** directly. Instead, we
-need to compile our **HLSL** files ahead of time into a compiled **SPIR-V** file (more
-information in the next section).
+A `vk.ShaderModule` is a processed shader file. We create it from a pre-compiled SPIR-V file.
+In vulkan, unlike in OpenGL, the driver does not accept shader code in GLSL directly. There are
+extensions that allow it, but its not standard. So we need to compile our GLSL files ahead of
+time into a compiled SPIR-V file. As part of the vulkan SDK, we have the `glslc` program, which
+is used to compile GLSL into SPIR-V.
+
+To compile the shaders used in this tutorial, navigate to the `/shaders/source/` directory. You
+will find scripts named `compile.bat` for Windows and `compile.sh` for Unix systems. Run the
+appropriate script for your operating system to compile all shader files. Whenever you need to
+compile the shaders, simply execute the corresponding script to build them.
+
+It is also possible to use HLSL instead of GLSL to code Vulkan shaders. A lot of projects like
+doing that, but we wont be doing it as part of this tutorial. If you want to look at how to do
+that, you can check in this official vulkan site [HLSL In Vulkan][].
+
+[HLSL In Vulkan]: https://docs.vulkan.org/guide/latest/hlsl.html
 
 ## Descriptor sets
 

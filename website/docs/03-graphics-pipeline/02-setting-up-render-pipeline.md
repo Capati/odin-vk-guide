@@ -471,66 +471,57 @@ output will be a pure color.
 
 These are the shaders:
 
-```hlsl title="/shaders/source/colored_triangle.vert.hlsl"
-struct VSOutput {
-    float4 Position : SV_POSITION;
-    float3 Color : COLOR;
-};
+```glsl title="/shaders/source/colored_triangle.vert"
+#version 450
 
-VSOutput main(uint vertexID : SV_VertexID)
+layout (location = 0) out vec3 outColor;
+
+void main() 
 {
-    // const array of positions for the triangle
-    const float3 positions[3] = {
-        float3(1.0, 1.0, 0.0),
-        float3(-1.0, 1.0, 0.0),
-        float3(0.0, -1.0, 0.0)
-    };
+    //const array of positions for the triangle
+    const vec3 positions[3] = vec3[3](
+        vec3(1.f,1.f, 0.0f),
+        vec3(-1.f,1.f, 0.0f),
+        vec3(0.f,-1.f, 0.0f)
+    );
 
-    // const array of colors for the triangle
-    const float3 colors[3] = {
-        float3(1.0, 0.0, 0.0), // red
-        float3(0.0, 1.0, 0.0), // green
-        float3(0.0, 0.0, 1.0)  // blue
-    };
+    //const array of colors for the triangle
+    const vec3 colors[3] = vec3[3](
+        vec3(1.0f, 0.0f, 0.0f), //red
+        vec3(0.0f, 1.0f, 0.0f), //green
+        vec3(00.f, 0.0f, 1.0f)  //blue
+    );
 
-    VSOutput output;
-    output.Position = float4(positions[vertexID], 1.0);
-    output.Color = colors[vertexID];
-
-    return output;
+    //output the position of each vertex
+    gl_Position = vec4(positions[gl_VertexIndex], 1.0f);
+    outColor = colors[gl_VertexIndex];
 }
 ```
 
-```hlsl title="/shaders/source/colored_triangle.frag.hlsl"
-struct PSInput {
-    float4 Position : SV_POSITION;
-    float3 Color : COLOR;
-};
+```glsl title="/shaders/source/colored_triangle.frag"
+#version 450
 
-float4 main(PSInput input) : SV_TARGET
+//shader input
+layout (location = 0) in vec3 inColor;
+
+//output write
+layout (location = 0) out vec4 outFragColor;
+
+void main() 
 {
-    // Output color with full alpha
-    return float4(input.Color, 1.0);
+    //return red
+    outFragColor = vec4(inColor,1.0f);
 }
 ```
 
-In our vertex shader, we have a hardcoded array of positions, and we index into it using the
-`vertexID` parameter (marked with `SV_VertexID` semantic). This works in a similar way to
-`LocalThreadID` on compute shaders. For every invocation of the vertex shader, this will be a
-different index, and we can use it to process our vertex data.
+In our vertex shader, we have a hardcoded array of positions, and we index into it from
+`gl_VertexIndex`. This works in a similar way to `LocalThreadID` on compute shaders worked. For
+every invocation of the vertex shader, this will be a different index, and we can use it to
+process out vertex, which will write into the fixed function gl_Position variable. As the array
+is only of length 3, if we tried to render more than 3 vertices (1 triangle) this will error.
 
-The vertex shader outputs a `VSOutput` structure containing:
-
-* A position (marked with `SV_POSITION` semantic)
-* A color (marked with `COLOR` semantic)
-
-As the position array is only of length 3, if we tried to render more than 3 vertices (1
-triangle), this would cause issues.
-
-In our pixel shader (fragment shader), we receive the interpolated color from the vertex shader
-through the `PSInput` structure. The shader's output is marked with the `SV_TARGET` semantic (which
-connects to the render attachments of the render pass), and we output the interpolated color
-with full alpha (1.0) as a float4.
+In our fragment shader, we will declare an output at `layout = 0` (this connects to the render
+attachments of the render pass), and we have a simple hardcoded red output.
 
 Lets now create the pipeline and layout we need to draw this triangle.
 

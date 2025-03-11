@@ -31,48 +31,42 @@ shaders at runtime to test them.
 The shader we are going to use to demonstrate pushconstants is this. It will blend between 2
 colors by Y coordinate, making a vertical gradient.
 
-Its found in `shaders/source/gradient_color.comp.hlsl`.
+```glsl title="/shaders/source/gradient_color.comp"
+#version 460
 
-```hlsl
-[[vk::push_constant]]
-struct PushConstantsBlock
-{
-    float4 data1;
-    float4 data2;
-    float4 data3;
-    float4 data4;
-} PushConstants;
+layout(local_size_x = 16, local_size_y = 16) in;
 
-RWTexture2D<float4> image : register(u0, space0);
+layout(rgba16f, set = 0, binding = 0) uniform image2D image;
 
-[numthreads(16, 16, 1)]
-void main(uint3 GlobalInvocationID : SV_DispatchThreadID)
-{
-    int2 texelCoord = int2(GlobalInvocationID.xy);
+// push constants block
+layout(push_constant) uniform constants {
+    vec4 data1;
+    vec4 data2;
+    vec4 data3;
+    vec4 data4;
+}
+PushConstants;
 
-    // Get image dimensions
-    uint width, height;
-    image.GetDimensions(width, height);
-    int2 size = int2(width, height);
+void main() {
+    ivec2 texelCoord = ivec2(gl_GlobalInvocationID.xy);
 
-    float4 topColor = PushConstants.data1;
-    float4 bottomColor = PushConstants.data2;
+    ivec2 size = imageSize(image);
 
-    if (texelCoord.x < size.x && texelCoord.y < size.y)
-    {
-        float blend = (float)texelCoord.y / (float)(size.y);
+    vec4 topColor = PushConstants.data1;
+    vec4 bottomColor = PushConstants.data2;
 
-        // HLSL lerp is equivalent to GLSL mix
-        image[texelCoord] = lerp(topColor, bottomColor, blend);
+    if (texelCoord.x < size.x && texelCoord.y < size.y) {
+        float blend = float(texelCoord.y) / (size.y);
+
+        imageStore(image, texelCoord, mix(topColor, bottomColor, blend));
     }
 }
 ```
 
-Its mostly the same as the gradient shader we had from last article. The
-`[[vk::push_constant]]` is a Vulkan-specific attribute in HLSL that identifies a struct as
-containing push constant data, we added 4 `float4`, and we are loading top and bottom color
-from it. `data3` and `data4` are not used, but we have them in there to avoid the validation
-layers complaining that we have a push-constants range larger than we have in the shader.
+Its mostly the same as the gradient shader we had from last article. We have added a **push
+constant block** containing 4 `vec4`s, and we are loading top and bottom color from it. `data3`
+and `data4` are not used, but we have them in there to avoid the validation layers complaining
+that we have a push-constants range larger than we have in the shader.
 
 We now need to change the pipeline layout creation to configure the pushconstants range. Lets
 first create a structure that mirrors those pushconstants directly into `engine.odin`.
@@ -204,9 +198,9 @@ Lets change the code on init_pipelines to create 2 of these effects. One will be
 we just did, the other is a pretty star-night sky shader.
 
 The sky shader is too complicated to explain here, but feel free to check the code on
-`sky.comp.hlsl`. Its taken from shadertoy and adapted slightly to run as a compute shader in
-here. data1 of the pushconstant will contain sky color x/y/z, and then w can be used to control
-the amount of stars.
+`sky.comp`. Its taken from shadertoy and adapted slightly to run as a compute shader in here.
+data1 of the pushconstant will contain sky color x/y/z, and then w can be used to control the
+amount of stars.
 
 With 2 shaders, we need to create 2 different `vk.ShaderModule`.
 

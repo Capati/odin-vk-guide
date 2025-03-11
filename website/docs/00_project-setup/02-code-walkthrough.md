@@ -147,9 +147,6 @@ import "core:strings"
 // Vendor
 import "vendor:glfw"
 
-@(private = "file")
-g_logger: log.Logger
-
 glfw_error_callback :: proc "c" (error: i32, description: cstring) {
     context = runtime.default_context()
     context.logger = g_logger
@@ -158,9 +155,6 @@ glfw_error_callback :: proc "c" (error: i32, description: cstring) {
 
 @(require_results)
 create_window :: proc(title: string, width, height: u32) -> (window: glfw.WindowHandle, ok: bool) {
-    // Save current logger for use outside of Odin context
-    g_logger = context.logger
-
     // We initialize GLFW and create a window with it.
     ensure(bool(glfw.Init()), "Failed to initialize GLFW")
 
@@ -228,10 +222,16 @@ Engine :: struct {
     stop_rendering: bool,
 }
 
+@(private)
+g_logger: log.Logger
+
 // Initializes everything in the engine.
 @(require_results)
 engine_init :: proc(self: ^Engine) -> (ok: bool) {
     ensure(self != nil, "Invalid 'Engine' object")
+
+    // Store the current logger for later use inside callbacks
+    g_logger = context.logger
 
     self.window_extent = DEFAULT_WINDOW_EXTENT
 
@@ -258,6 +258,13 @@ engine_init :: proc(self: ^Engine) -> (ok: bool) {
     return true
 }
 ```
+
+:::tip[Global logger]
+
+We created a global logger (`g_logger`) that will be used in callbacks that are outside of
+Odin context.
+
+:::
 
 After initializing GLFW, we create a window and store it in the `window` field for later use.
 The window's width and height are stored in the `window_extent` field, which is of type

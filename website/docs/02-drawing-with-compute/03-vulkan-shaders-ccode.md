@@ -11,114 +11,111 @@ shader that has an image as input, and writes a color to it, based on the thread
 gradient. This one is already on the code, in the shaders folder. From now on, all the shaders
 we add will go into that folder as the CMake script will build them.
 
-```hlsl title="shaders/source/gradient.comp.hlsl"
-// Thread group size definition - 16x16 threads per group
-#define THREAD_GROUP_SIZE_X 16
-#define THREAD_GROUP_SIZE_Y 16
+```glsl title="/shaders/source/gradient.comp"
+#version 460
 
-// Resource binding - This texture will store our output image
-RWTexture2D<float4> image : register(u0);
+layout(local_size_x = 16, local_size_y = 16) in;
 
-// Main compute shader procedure
-// - numthreads decorator defines the thread group dimensions (equivalent to GLSL's local_size)
-// - DTid (DispatchThreadID) - Global thread ID (equivalent to gl_GlobalInvocationID in GLSL)
-// - GTid (GroupThreadID) - Thread ID within the current group (equivalent to
-//   gl_LocalInvocationID in GLSL)
-[numthreads(THREAD_GROUP_SIZE_X, THREAD_GROUP_SIZE_Y, 1)]
-void main(uint3 DTid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
-{
-    // Get the current pixel coordinate from the global thread ID
-    int2 texelCoord = int2(DTid.xy);
+layout(rgba16f, set = 0, binding = 0) uniform image2D image;
 
-    // Get the dimensions of our texture
-    // This replaces imageSize() in GLSL
-    uint width, height;
-    image.GetDimensions(width, height);
+void main() {
+    ivec2 texelCoord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(image);
 
-    // Only process pixels within the bounds of the texture
-    if (texelCoord.x < width && texelCoord.y < height)
-    {
-        // Initialize with black color (fully opaque)
-        float4 color = float4(0.0, 0.0, 0.0, 1.0);
+    if (texelCoord.x < size.x && texelCoord.y < size.y) {
+        vec4 color = vec4(0.0, 0.0, 0.0, 1.0);
 
-        // Skip border threads (where local IDs are 0)
-        // This creates a grid pattern where the outer edge of each thread group is black
-        if (GTid.x != 0 && GTid.y != 0)
-        {
-            // Calculate color based on normalized coordinates
-            // Red channel increases with x position
-            color.x = float(texelCoord.x) / (width);
-            // Green channel increases with y position
-            color.y = float(texelCoord.y) / (height);
+        if (gl_LocalInvocationID.x != 0 && gl_LocalInvocationID.y != 0) {
+            color.x = float(texelCoord.x) / (size.x);
+            color.y = float(texelCoord.y) / (size.y);
         }
 
-        // Write the calculated color to the texture
-        // This replaces imageStore() in GLSL
-        image[texelCoord] = color;
+        imageStore(image, texelCoord, color);
     }
 }
 ```
 
-For resource binding, HLSL uses a register-based system instead of descriptor sets. Our
-`RWTexture2D` is bound to `register(u0)`, which is functionally equivalent to binding an
-`image2D` to set 0, binding 0 in GLSL.
+We start by specifying the GLSL version for the shader. In this case, we use version 460, which
+corresponds to GLSL 4.6. This version provides a robust feature set suitable for modern compute
+shaders.
 
-The thread group size is specified using the `[numthreads]` attribute. This defines that each
-group will have 16x16 lanes working together, similar to the GLSL workgroup size.
+Next, we define the workgroup size using a `layout` statement. When a compute shader executes,
+it runs in groups of threads (or "lanes"), and the workgroup size determines how these threads
+are organized. Here, we specify a size of `x=16`, `y=16`, `z=1` (where `z=1` is the default).
+This means each workgroup consists of a 16x16 grid of threads, totaling 256 threads per group,
+all working in parallel within the shader.
 
-The shader creates a gradient based on the global thread ID coordinates
-(`SV_DispatchThreadID`). If the local thread ID (`SV_GroupThreadID`) is 0 on either X or Y, we
-default to black, creating a grid pattern that visualizes our thread group boundaries.
+Following that, we use another `layout` statement to define the shader's input, which is
+managed through Vulkan descriptor sets. We specify a single `image2D` resource, assigned to
+descriptor set 0 at binding 0. In Vulkan, descriptor sets are collections of resources (like
+images or buffers) that the shader can access. Each set can contain multiple bindings, which
+are individual slots for those resources. In this case, we have one descriptor set (index 0)
+with a single `image2D` bound to binding 0 within that set.
 
-## HLSL to SPIR-V
+The shader itself is a simple demonstration shader that generates a gradient based on the
+global invocation ID—a unique identifier for each thread across all workgroups. To add a visual
+distinction, if the local invocation ID (the thread's position within its workgroup) is 0 on
+either the X or Y axis, the shader outputs black. This creates a grid pattern in the resulting
+image, where the black lines highlight the boundaries between workgroups, making it easy to
+visualize how the shader's thread groups are invoked.
 
-As part of the vulkan SDK, we have the `dxc` program, which is used to compile HLSL into SPIR-V.
+## GLSL to SPIR-V
 
-If you look at the `/shaders/source/` folder in the odin-vk-guide codebase, you see two scripts,
-`compile.bat` (for Windows) and `compile.sh` (for Unix). Whenever you want to compile the
-shaders on this tutorial, you need to build the shaders using the script.
+The Vulkan SDK includes a tool called `glslc`, a compiler that converts GLSL (OpenGL Shading
+Language) source code into SPIR-V, the binary format required by Vulkan for executing shaders
+on the GPU.
 
-:::tip[Watch Shader Changes]
+In the `odin-vk-guide` codebase, the `/shaders/source/` directory contains two helper scripts:
+`compile.bat` (for Windows) and `compile.sh` (for Unix-based systems). These scripts simplify
+the process of compiling shaders for this tutorial. To generate the necessary SPIR-V files,
+you’ll need to run the appropriate script for your platform whenever you modify or add shaders.
 
-The compile script can watch the `shaders` folder for changes. Simply pass `watch` as an
-argument:
+:::warning[Recompile the shaders]
+
+Any time you touch the shaders, make sure you compile the shaders. This process has to succeed
+with no errors, or the project will be missing the SPIR-V files necessary to run this shaders
+on the gpu.
+
+:::
+
+### Automatic Compilation with Watch Mode
+
+The compile scripts offer a convenient "watch" feature to monitor the `shaders` folder for
+changes. To enable this, pass `watch` as an argument:
 
 ```bash
 compile.bat watch
 ```
 
-This command will initially compile all shaders and then continuously monitor the folder,
-recompiling any shader that was modified.
+When you run this command, the script will:
 
-:::
+1. Compile all shaders in the folder initially.
+2. Continuously monitor the folder and recompile any shader file that’s modified.
 
-This is the basic command to compile using `dxc`:
+This is especially useful during development, as it eliminates the need to manually re-run the
+script after every change.
 
-```bash title="using dxc.exe on Windows"
-dxc.exe -spirv -T vs_6_10 -E main .\gradient.comp.hlsl -Fo .\gradient.comp.hlsl.spv
-```
+### Manual Compilation with `glslc`
 
-```bash title="using dxc on Unix"
-dxc -spirv -T vs_6_10 -E main ./gradient.comp.hlsl -Fo ./gradient.comp.hlsl.spv
-```
+If you prefer to compile shaders manually, you can use glslc directly. Here’s the basic syntax:
 
-- `-T` selects the profile to compile the shader against (`vs_6_0` = Vertex shader model 6,
-  `ps_6_0` = Pixel/fragment shader model 6, `cs_6_0` = Compute shader model 6, etc.).
+- On Windows:
 
-- `-E` selects the main entry point for the shader.
+  ```bash
+  glslc.exe .\gradient.comp -o .\gradient.comp.spv
+  ```
 
-If you want to learn more how to use HLSL shaders with Vulkan, you can check in this official
-vulkan site [HLSL In Vulkan][].
+- On Unix-based systems:
 
-[HLSL In Vulkan]: https://docs.vulkan.org/guide/latest/hlsl.html
+  ```bash
+  glslc ./gradient.comp -o ./gradient.comp.spv
+  ```
 
-:::warning[compile the shaders]
+In these examples:
 
-Any time you touch the shaders, make sure you compile the shaders. This process has to succeed
-with no errors, or the project will be missing the spirv files necessary to run this shaders on
-the gpu.
-
-:::
+- `gradient.comp` is the input GLSL shader file.
+- `-o` specifies the output file, `gradient.comp.spv`, which will contain the compiled SPIR-V
+  code.
 
 ## Setting up the descriptor layout
 

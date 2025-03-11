@@ -64,7 +64,7 @@ pipeline.
 
 - [x] The graphics pipeline
 - [x] Setting up render pipeline
-- [ ] Mesh buffers
+- [x] Mesh buffers
 - [ ] Mesh Loading
 - [ ] Blending
 - [ ] Window Resizing

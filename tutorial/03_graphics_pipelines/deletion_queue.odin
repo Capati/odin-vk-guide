@@ -16,6 +16,12 @@ Image_Resource :: struct {
 	allocation: vma.Allocation,
 }
 
+Allocated_Buffer_Resource :: struct {
+	buffer:     vk.Buffer,
+	allocator:  vma.Allocator,
+	allocation: vma.Allocation,
+}
+
 Deletion_ProcC :: #type proc "c" ()
 
 Resource :: union {
@@ -23,6 +29,7 @@ Resource :: union {
 	vk.Semaphore,
 	vk.Fence,
 	Image_Resource,
+	Allocated_Buffer_Resource,
 	vk.ImageView,
 	vk.DeviceMemory,
 	vk.Sampler,
@@ -111,6 +118,8 @@ deletion_queue_flush :: proc(queue: ^Deletion_Queue) {
 			vk.DestroySampler(queue.device, res, nil)
 		case Image_Resource:
 			vma.destroy_image(res.allocator, res.image, res.allocation)
+		case Allocated_Buffer_Resource:
+			vma.destroy_buffer(res.allocator, res.buffer, res.allocation)
 		case vk.Fence:
 			vk.DestroyFence(queue.device, res, nil)
 		case vk.Semaphore:

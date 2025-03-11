@@ -18,10 +18,16 @@ Engine :: struct {
 	stop_rendering: bool,
 }
 
+@(private)
+g_logger: log.Logger
+
 // Initializes everything in the engine.
 @(require_results)
 engine_init :: proc(self: ^Engine) -> (ok: bool) {
 	ensure(self != nil, "Invalid 'Engine' object")
+
+	// Store the current logger for later use inside callbacks
+	g_logger = context.logger
 
 	self.window_extent = DEFAULT_WINDOW_EXTENT
 
