@@ -1,7 +1,9 @@
 # Build
 
-**/build/*
-!**/build/.gitkeep
+/build/*
+!/build/.gitkeep
+!/build/assets/
+!/build/assets/**
 
 # Project
 src/*
@@ -20,6 +22,7 @@ src/*
 *.so.*
 *.dylib
 *.obj
+!build/assets/**/*.obj
 
 # Executables
 *.exe
