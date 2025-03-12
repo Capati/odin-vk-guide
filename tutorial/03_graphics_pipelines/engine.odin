@@ -6,7 +6,6 @@ import "base:runtime"
 import "core:log"
 import "core:math"
 import la "core:math/linalg"
-import "core:time"
 
 // Vendor
 import "vendor:glfw"
@@ -74,6 +73,7 @@ Engine :: struct {
 
 	// Swapchain
 	vk_swapchain:                 vk.SwapchainKHR,
+	swapchain_extent:             vk.Extent2D,
 	swapchain_format:             vk.Format,
 	swapchain_images:             []vk.Image,
 	swapchain_image_views:        []vk.ImageView,
@@ -99,6 +99,7 @@ Engine :: struct {
 	// Rendering resources
 	draw_image:                   Allocated_Image,
 	draw_extent:                  vk.Extent2D,
+	render_scale:                 f32,
 	gradient_pipeline_layout:     vk.PipelineLayout,
 	background_effects:           [Compute_Effect_Kind]Compute_Effect,
 	current_background_effect:    Compute_Effect_Kind,
@@ -128,6 +129,7 @@ engine_init :: proc(self: ^Engine) -> (ok: bool) {
 	g_logger = context.logger
 
 	self.window_extent = DEFAULT_WINDOW_EXTENT
+	self.render_scale = 1.0
 
 	// Create a window using GLFW
 	self.window = create_window(
@@ -216,9 +218,6 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 	vkb.instance_require_api_version(&instance_builder, vk.API_VERSION_1_3)
 
 	when ODIN_DEBUG {
-		ta := context.temp_allocator
-		runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
-
 		vkb.instance_request_validation_layers(&instance_builder)
 
 		default_debug_callback :: proc "system" (
@@ -244,19 +243,6 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 
 		vkb.instance_set_debug_callback(&instance_builder, default_debug_callback)
 		vkb.instance_set_debug_callback_user_data_pointer(&instance_builder, self)
-
-		VK_LAYER_LUNARG_MONITOR :: "VK_LAYER_LUNARG_monitor"
-
-		info := vkb.get_system_info(ta)
-
-		if vkb.is_layer_available(&info, VK_LAYER_LUNARG_MONITOR) {
-			// Displays FPS in the application's title bar. It is only compatible
-			// with the Win32 and XCB windowing systems.
-			// https://vulkan.lunarg.com/doc/sdk/latest/windows/monitor_layer.html
-			when ODIN_OS == .Windows || ODIN_OS == .Linux {
-				vkb.instance_enable_layer(&instance_builder, VK_LAYER_LUNARG_MONITOR)
-			}
-		}
 	}
 
 	self.vkb.instance = vkb.build_instance(&instance_builder) or_return
@@ -360,11 +346,35 @@ engine_create_swapchain :: proc(self: ^Engine, width, height: u32) -> (ok: bool)
 	vkb.swapchain_builder_set_desired_extent(&builder, width, height)
 	vkb.swapchain_builder_add_image_usage_flags(&builder, {.TRANSFER_DST})
 
-	self.vkb.swapchain = vkb.build_swapchain(&builder) or_return
-	self.vk_swapchain = self.vkb.swapchain.handle
+	if self.vkb.swapchain != nil {
+		vkb.swapchain_builder_set_old_swapchain(&builder, self.vkb.swapchain)
+	}
 
+	// Build new swapchain
+	swapchain := vkb.build_swapchain(&builder) or_return
+
+	// Destroy old swapchain resources only after successful creation
+	if self.vkb.swapchain != nil {
+		engine_destroy_swapchain(self)
+	}
+
+	// Update engine state with new swapchain
+	self.vk_swapchain = swapchain.handle
+	self.vkb.swapchain = swapchain
+	self.swapchain_extent = swapchain.extent
 	self.swapchain_images = vkb.swapchain_get_images(self.vkb.swapchain) or_return
 	self.swapchain_image_views = vkb.swapchain_get_image_views(self.vkb.swapchain) or_return
+
+	return true
+}
+
+engine_resize_swapchain :: proc(self: ^Engine) -> (ok: bool) {
+	vk_check(vk.DeviceWaitIdle(self.vk_device)) or_return
+
+	width, height := glfw.GetFramebufferSize(self.window)
+	self.window_extent = {u32(width), u32(height)}
+
+	engine_create_swapchain(self, self.window_extent.width, self.window_extent.height) or_return
 
 	return true
 }
@@ -379,10 +389,13 @@ engine_destroy_swapchain :: proc(self: ^Engine) {
 engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
 	engine_create_swapchain(self, self.window_extent.width, self.window_extent.height) or_return
 
+	monitor := glfw.GetPrimaryMonitor()
+	mode := glfw.GetVideoMode(monitor)
+
 	// Draw image size will match the window
 	draw_image_extent := vk.Extent3D {
-		width  = self.window_extent.width,
-		height = self.window_extent.height,
+		width  = u32(mode.width),
+		height = u32(mode.height),
 		depth  = 1,
 	}
 
@@ -994,6 +1007,51 @@ engine_draw_background :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: boo
 	return true
 }
 
+engine_ui_definition :: proc(self: ^Engine) {
+	// imgui new frame
+	im_glfw.new_frame()
+	im_vk.new_frame()
+	im.new_frame()
+
+	if im.begin("Background", nil, {.Always_Auto_Resize}) {
+		im.slider_float("Render scale", &self.render_scale, 0.3, 1.0)
+
+		selected := &self.background_effects[self.current_background_effect]
+
+		im.text("Selected effect: %s", selected.name)
+
+		@(static) current_background_effect: i32
+		current_background_effect = i32(self.current_background_effect)
+
+		// If the combo is opened and an item is selected, update the current effect
+		if im.begin_combo("Effect", selected.name) {
+			for effect, i in self.background_effects {
+				is_selected := i32(i) == current_background_effect
+				if im.selectable(effect.name, is_selected) {
+					current_background_effect = i32(i)
+					self.current_background_effect = Compute_Effect_Kind(current_background_effect)
+				}
+
+				// Set initial focus when the currently selected item becomes visible
+				if is_selected {
+					im.set_item_default_focus()
+				}
+			}
+			im.end_combo()
+		}
+
+		im.input_float4("data1", &selected.data.data1)
+		im.input_float4("data2", &selected.data.data2)
+		im.input_float4("data3", &selected.data.data3)
+		im.input_float4("data4", &selected.data.data4)
+
+	}
+	im.end()
+
+	//make imgui calculate internal draw structures
+	im.render()
+}
+
 // Draw loop.
 engine_draw :: proc(self: ^Engine) -> (ok: bool) {
 	// Steps:
@@ -1011,16 +1069,16 @@ engine_draw :: proc(self: ^Engine) -> (ok: bool) {
 	vk_check(vk.ResetFences(self.vk_device, 1, &frame.render_fence)) or_return
 
 	// Request image from the swapchain
-	vk_check(
-		vk.AcquireNextImageKHR(
-			self.vk_device,
-			self.vk_swapchain,
-			max(u64),
-			frame.swapchain_semaphore,
-			0,
-			&frame.swapchain_image_index,
-		),
-	) or_return
+	if result := vk.AcquireNextImageKHR(
+		self.vk_device,
+		self.vk_swapchain,
+		max(u64),
+		frame.swapchain_semaphore,
+		0,
+		&frame.swapchain_image_index,
+	); result == .ERROR_OUT_OF_DATE_KHR {
+		engine_resize_swapchain(self) or_return
+	}
 
 	// The the current command buffer, naming it cmd for shorter writing
 	cmd := engine_get_current_frame(self).main_command_buffer
@@ -1033,8 +1091,16 @@ engine_draw :: proc(self: ^Engine) -> (ok: bool) {
 	// once, so we want to let vulkan know that
 	cmd_begin_info := command_buffer_begin_info({.ONE_TIME_SUBMIT})
 
-	self.draw_extent.width = self.draw_image.image_extent.width
-	self.draw_extent.height = self.draw_image.image_extent.height
+	self.draw_extent = {
+		width  = u32(
+			f32(min(self.swapchain_extent.width, self.draw_image.image_extent.width)) *
+			self.render_scale,
+		),
+		height = u32(
+			f32(min(self.swapchain_extent.height, self.draw_image.image_extent.height)) *
+			self.render_scale,
+		),
+	}
 
 	// Start the command buffer recording
 	vk_check(vk.BeginCommandBuffer(cmd, &cmd_begin_info)) or_return
@@ -1065,7 +1131,7 @@ engine_draw :: proc(self: ^Engine) -> (ok: bool) {
 		self.draw_image.image,
 		self.swapchain_images[frame.swapchain_image_index],
 		self.draw_extent,
-		self.vkb.swapchain.extent,
+		self.swapchain_extent,
 	)
 
 	// Set swapchain image layout to Attachment Optimal so we can draw it
@@ -1119,7 +1185,10 @@ engine_draw :: proc(self: ^Engine) -> (ok: bool) {
 		pImageIndices      = &frame.swapchain_image_index,
 	}
 
-	vk_check(vk.QueuePresentKHR(self.graphics_queue, &present_info)) or_return
+	if result := vk.QueuePresentKHR(self.graphics_queue, &present_info);
+	   result == .ERROR_OUT_OF_DATE_KHR {
+		engine_resize_swapchain(self) or_return
+	}
 
 	// Increase the number of frames drawn
 	self.frame_number += 1
@@ -1134,16 +1203,18 @@ engine_draw_imgui :: proc(
 ) -> (
 	ok: bool,
 ) {
-	color_attachment := attachment_info(target_view, nil, .GENERAL)
-	render_info := rendering_info(self.vkb.swapchain.extent, &color_attachment, nil)
+	if data := im.get_draw_data(); data != nil {
+		color_attachment := attachment_info(target_view, nil, .GENERAL)
+		render_info := rendering_info(self.swapchain_extent, &color_attachment, nil)
 
-	vk.CmdBeginRendering(cmd, &render_info)
+		vk.CmdBeginRendering(cmd, &render_info)
 
-	im_vk.render_draw_data(im.get_draw_data(), cmd)
+		im_vk.render_draw_data(im.get_draw_data(), cmd)
 
-	vk.CmdEndRendering(cmd)
+		vk.CmdEndRendering(cmd)
+	}
 
-	return
+	return true
 }
 
 engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool) {
@@ -1204,81 +1275,34 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
 // Run main loop.
 @(require_results)
 engine_run :: proc(self: ^Engine) -> (ok: bool) {
-	// Get monitor info
 	monitor_info := get_primary_monitor_info()
-	log.debugf("Monitor refresh rate: %d Hz", monitor_info.refresh_rate)
 
-	// Main loop with frame limiting
-	previous_time := glfw.GetTime()
+	t: Timer
+	timer_init(&t, monitor_info.refresh_rate)
 
 	log.info("Entering main loop...")
 
 	for !glfw.WindowShouldClose(self.window) {
 		glfw.PollEvents()
 
-		// Do not draw if we are minimized
 		if self.stop_rendering {
-			glfw.WaitEvents() // Wait to avoid endless spinning
-			previous_time = glfw.GetTime() // Reset time after waiting
+			glfw.WaitEvents()
+			timer_init(&t, monitor_info.refresh_rate) // Reset timer after wait
 			continue
 		}
 
-		current_time := glfw.GetTime()
-		delta_time := current_time - previous_time
+		// Advance timer and set for FPS update
+		timer_tick(&t)
 
-		if delta_time < monitor_info.frame_time_target {
-			// Sleep to limit FPS
-			sleep_time := monitor_info.frame_time_target - delta_time
-			time.sleep(time.Duration(sleep_time * 1e9)) // Convert to nanoseconds
-			current_time = glfw.GetTime()
-		}
+		engine_ui_definition(self)
 
-		// imgui new frame
-		im_glfw.new_frame()
-		im_vk.new_frame()
-		im.new_frame()
+		engine_draw(self) or_return
 
-		if im.begin("Background", nil, {.Always_Auto_Resize}) {
-			selected := &self.background_effects[self.current_background_effect]
-
-			im.text("Selected effect: %s", selected.name)
-
-			@(static) current_background_effect: i32
-			current_background_effect = i32(self.current_background_effect)
-
-			// If the combo is opened and an item is selected, update the current effect
-			if im.begin_combo("Effect", selected.name) {
-				for effect, i in self.background_effects {
-					is_selected := i32(i) == current_background_effect
-					if im.selectable(effect.name, is_selected) {
-						current_background_effect = i32(i)
-						self.current_background_effect = Compute_Effect_Kind(
-							current_background_effect,
-						)
-					}
-
-					// Set initial focus when the currently selected item becomes visible
-					if is_selected {
-						im.set_item_default_focus()
-					}
-				}
-				im.end_combo()
+		when ODIN_DEBUG {
+			if timer_check_fps_updated(t) {
+				window_update_title_with_fps(self.window, TITLE, timer_get_fps(t))
 			}
-
-			im.input_float4("data1", &selected.data.data1)
-			im.input_float4("data2", &selected.data.data2)
-			im.input_float4("data3", &selected.data.data3)
-			im.input_float4("data4", &selected.data.data4)
-
 		}
-		im.end()
-
-		//make imgui calculate internal draw structures
-		im.render()
-
-		engine_draw(self)
-
-		previous_time = current_time
 	}
 
 	log.info("Exiting...")

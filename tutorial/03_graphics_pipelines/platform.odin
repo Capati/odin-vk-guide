@@ -2,6 +2,7 @@ package vk_guide
 
 // Core
 import "base:runtime"
+import "core:fmt"
 import "core:log"
 import "core:strings"
 
@@ -43,6 +44,38 @@ destroy_window :: proc(window: glfw.WindowHandle) {
 	glfw.Terminate()
 }
 
+Monitor_Info :: struct {
+	refresh_rate:      u32,
+	frame_time_target: f64, // in seconds
+}
+
+get_primary_monitor_info :: proc() -> (info: Monitor_Info) {
+	mode := glfw.GetVideoMode(glfw.GetPrimaryMonitor())
+	info = Monitor_Info {
+		refresh_rate      = u32(mode.refresh_rate),
+		frame_time_target = 1.0 / f64(mode.refresh_rate),
+	}
+	return
+}
+
+WINDOW_TITLE_BUFFER_LEN :: #config(WINDOW_TITLE_BUFFER_LEN, 256)
+
+window_update_title_with_fps :: proc(window: glfw.WindowHandle, title: string, fps: f64) {
+	buffer: [WINDOW_TITLE_BUFFER_LEN]byte
+	formatted := fmt.bprintf(buffer[:], "%s - FPS = %.2f", title, fps)
+	if len(formatted) >= WINDOW_TITLE_BUFFER_LEN {
+		buffer[WINDOW_TITLE_BUFFER_LEN - 1] = 0 // Truncate and null-terminate
+		log.warnf(
+			"Window title truncated: buffer size (%d) exceeded by '%s'",
+			WINDOW_TITLE_BUFFER_LEN,
+			formatted,
+		)
+	} else if len(formatted) == 0 || buffer[len(formatted) - 1] != 0 {
+		buffer[len(formatted)] = 0
+	}
+	glfw.SetWindowTitle(window, cstring(raw_data(buffer[:])))
+}
+
 // -----------------------------------------------------------------------------
 // Callbacks
 // -----------------------------------------------------------------------------
@@ -55,20 +88,4 @@ callback_window_minimize :: proc "c" (window: glfw.WindowHandle, iconified: i32)
 	// Get the engine from the window user pointer
 	engine := cast(^Engine)glfw.GetWindowUserPointer(window)
 	engine.stop_rendering = bool(iconified) // Flag to not draw if we are minimized
-}
-
-Monitor_Info :: struct {
-	refresh_rate:      i32,
-	frame_time_target: f64, // in seconds
-}
-
-get_primary_monitor_info :: proc() -> Monitor_Info {
-	monitor := glfw.GetPrimaryMonitor()
-	mode := glfw.GetVideoMode(monitor)
-
-	info := Monitor_Info {
-		refresh_rate      = mode.refresh_rate,
-		frame_time_target = 1.0 / f64(mode.refresh_rate),
-	}
-	return info
 }

@@ -1,7 +1,6 @@
 ---
 sidebar_position: 2
 sidebar_label: "Setting up render pipeline"
-description: TODO.
 ---
 
 # Setting up render pipeline

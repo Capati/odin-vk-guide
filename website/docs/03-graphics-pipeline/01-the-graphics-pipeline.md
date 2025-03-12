@@ -1,7 +1,6 @@
 ---
 sidebar_position: 1
 sidebar_label: "The graphics pipeline"
-description: TODO.
 ---
 
 # The graphics pipeline
