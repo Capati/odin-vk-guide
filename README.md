@@ -55,6 +55,7 @@ we will also setup DearImgui library to get some user interface.
 - [x] Vulkan Shaders - Code
 - [x] Setting up IMGUI
 - [x] Push Constants and new shaders
+- [x] Fixing Input Lag (**Extra section**)
 
 ### 3. Graphics Pipelines
 
