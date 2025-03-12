@@ -532,5 +532,12 @@ a flashing blue screen.
 If you encounter unexpected results, check the validation layers, as they will catch possible
 syncronization problems.
 
+:::warning[]
+
+Resizing the window in Vulkan at this stage will generate an error of `ERROR_OUT_OF_DATE_KHR`.
+This issue will be addressed and fixed in a later chapter.
+
+:::
+
 This concludes chapter 1, and the next we are going to do is to begin using some compute
 shaders to draw other things than a simple flashing screen.

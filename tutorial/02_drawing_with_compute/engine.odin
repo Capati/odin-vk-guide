@@ -207,9 +207,6 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 	vkb.instance_require_api_version(&instance_builder, vk.API_VERSION_1_3)
 
 	when ODIN_DEBUG {
-		ta := context.temp_allocator
-		runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
-
 		vkb.instance_request_validation_layers(&instance_builder)
 
 		default_debug_callback :: proc "system" (
@@ -235,19 +232,6 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 
 		vkb.instance_set_debug_callback(&instance_builder, default_debug_callback)
 		vkb.instance_set_debug_callback_user_data_pointer(&instance_builder, self)
-
-		VK_LAYER_LUNARG_MONITOR :: "VK_LAYER_LUNARG_monitor"
-
-		info := vkb.get_system_info(ta)
-
-		if vkb.is_layer_available(&info, VK_LAYER_LUNARG_MONITOR) {
-			// Displays FPS in the application's title bar. It is only compatible
-			// with the Win32 and XCB windowing systems.
-			// https://vulkan.lunarg.com/doc/sdk/latest/windows/monitor_layer.html
-			when ODIN_OS == .Windows || ODIN_OS == .Linux {
-				vkb.instance_enable_layer(&instance_builder, VK_LAYER_LUNARG_MONITOR)
-			}
-		}
 	}
 
 	self.vkb.instance = vkb.build_instance(&instance_builder) or_return
@@ -347,6 +331,8 @@ engine_create_swapchain :: proc(self: ^Engine, width, height: u32) -> (ok: bool)
 		{format = self.swapchain_format, colorSpace = .SRGB_NONLINEAR},
 	)
 	vkb.swapchain_builder_set_present_mode(&builder, .FIFO)
+	vkb.swapchain_builder_set_present_mode(&builder, .IMMEDIATE)
+	vkb.swapchain_builder_set_present_mode(&builder, .MAILBOX)
 	vkb.swapchain_builder_set_desired_extent(&builder, width, height)
 	vkb.swapchain_builder_add_image_usage_flags(&builder, {.TRANSFER_DST})
 
@@ -832,6 +818,49 @@ engine_draw_imgui :: proc(
 	return
 }
 
+engine_ui_definition :: proc(self: ^Engine) {
+	// imgui new frame
+	im_glfw.new_frame()
+	im_vk.new_frame()
+	im.new_frame()
+
+	if im.begin("Background", nil, {.Always_Auto_Resize}) {
+		selected := &self.background_effects[self.current_background_effect]
+
+		im.text("Selected effect: %s", selected.name)
+
+		@(static) current_background_effect: i32
+		current_background_effect = i32(self.current_background_effect)
+
+		// If the combo is opened and an item is selected, update the current effect
+		if im.begin_combo("Effect", selected.name) {
+			for effect, i in self.background_effects {
+				is_selected := i32(i) == current_background_effect
+				if im.selectable(effect.name, is_selected) {
+					current_background_effect = i32(i)
+					self.current_background_effect = Compute_Effect_Kind(current_background_effect)
+				}
+
+				// Set initial focus when the currently selected item becomes visible
+				if is_selected {
+					im.set_item_default_focus()
+				}
+			}
+			im.end_combo()
+		}
+
+		im.input_float4("data1", &selected.data.data1)
+		im.input_float4("data2", &selected.data.data2)
+		im.input_float4("data3", &selected.data.data3)
+		im.input_float4("data4", &selected.data.data4)
+
+	}
+	im.end()
+
+	//make imgui calculate internal draw structures
+	im.render()
+}
+
 // Draw loop.
 @(require_results)
 engine_draw :: proc(self: ^Engine) -> (ok: bool) {
@@ -968,62 +997,34 @@ engine_draw :: proc(self: ^Engine) -> (ok: bool) {
 // Run main loop.
 @(require_results)
 engine_run :: proc(self: ^Engine) -> (ok: bool) {
+	monitor_info := get_primary_monitor_info()
+
+	t: Timer
+	timer_init(&t, monitor_info.refresh_rate)
+
 	log.info("Entering main loop...")
 
-	loop: for !glfw.WindowShouldClose(self.window) {
+	for !glfw.WindowShouldClose(self.window) {
 		glfw.PollEvents()
 
-		// Do not draw if we are minimized
 		if self.stop_rendering {
-			glfw.WaitEvents() // Wait to avoid endless spinning
-			continue loop
+			glfw.WaitEvents()
+			timer_init(&t, monitor_info.refresh_rate) // Reset timer after wait
+			continue
 		}
 
-		// imgui new frame
-		im_glfw.new_frame()
-		im_vk.new_frame()
-		im.new_frame()
+		// Advance timer and set for FPS update
+		timer_tick(&t)
 
-		if im.begin("Background", nil, {.Always_Auto_Resize}) {
-			selected := &self.background_effects[self.current_background_effect]
+		engine_ui_definition(self)
 
-			im.text("Selected effect: %s", selected.name)
-
-			@(static) current_background_effect: i32
-			current_background_effect = i32(self.current_background_effect)
-
-			// If the combo is opened and an item is selected, update the current effect
-			if im.begin_combo("Effect", selected.name) {
-				for effect, i in self.background_effects {
-					is_selected := i32(i) == current_background_effect
-					if im.selectable(effect.name, is_selected) {
-						current_background_effect = i32(i)
-						self.current_background_effect = Compute_Effect_Kind(
-							current_background_effect,
-						)
-					}
-
-					// Set initial focus when the currently selected item becomes visible
-					if is_selected {
-						im.set_item_default_focus()
-					}
-				}
-				im.end_combo()
-			}
-
-			im.input_float4("data1", &selected.data.data1)
-			im.input_float4("data2", &selected.data.data2)
-			im.input_float4("data3", &selected.data.data3)
-			im.input_float4("data4", &selected.data.data4)
-
-		}
-		im.end()
-
-		//make imgui calculate internal draw structures
-		im.render()
-
-		// Submit the frame with the latest input data
 		engine_draw(self) or_return
+
+		when ODIN_DEBUG {
+			if timer_check_fps_updated(t) {
+				window_update_title_with_fps(self.window, TITLE, timer_get_fps(t))
+			}
+		}
 	}
 
 	log.info("Exiting...")

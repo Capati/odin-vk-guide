@@ -109,9 +109,6 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
     vkb.instance_require_api_version(&instance_builder, vk.API_VERSION_1_3)
 
     when ODIN_DEBUG {
-        ta := context.temp_allocator
-        runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
-
         vkb.instance_request_validation_layers(&instance_builder)
 
         default_debug_callback :: proc "system" (
@@ -137,19 +134,6 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 
         vkb.instance_set_debug_callback(&instance_builder, default_debug_callback)
         vkb.instance_set_debug_callback_user_data_pointer(&instance_builder, self)
-
-        VK_LAYER_LUNARG_MONITOR :: "VK_LAYER_LUNARG_monitor"
-
-        info := vkb.get_system_info(ta)
-
-        if vkb.is_layer_available(&info, VK_LAYER_LUNARG_MONITOR) {
-            // Displays FPS in the application's title bar. It is only compatible
-            // with the Win32 and XCB windowing systems.
-            // https://vulkan.lunarg.com/doc/sdk/latest/windows/monitor_layer.html
-            when ODIN_OS == .Windows || ODIN_OS == .Linux {
-                vkb.instance_enable_layer(&instance_builder, VK_LAYER_LUNARG_MONITOR)
-            }
-        }
     }
 
     // Grab the instance
@@ -206,14 +190,6 @@ Lastly, inside `ODIN_DEBUG`, we configures Vulkan debugging features:
         - `vkb.instance_set_debug_callback_user_data_pointer`: Passes `self` (our engine) as
           user data
     - Returns `false` as required by Vulkan specification for debug callbacks
-
-:::tip[VK_LAYER_LUNARG_MONITOR]
-
-The `VK_LAYER_LUNARG_monitor` utility layer displays the real-time frame rate in
-frames-per-second in the application's title bar. It is only compatible with the Win32 and XCB
-windowing systems and will not display the frame rate on other platforms.
-
-:::
 
 Next, we retrieve the `vk.Instance` handle from the `vkb.Instance` object and store both the
 handle and the `vkb` object in our `Engine` structure.
