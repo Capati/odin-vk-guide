@@ -19,6 +19,7 @@ goes to the authors of vkguide.dev.
   - [4. Textures and Engine Architecture](#4-textures-and-engine-architecture)
   - [5. GLTF loading](#5-gltf-loading)
   - [6. GPU Driven Rendering](#6-gpu-driven-rendering)
+- [Contributing](#contributing)
 - [License](#license)
 
 ## Progress
@@ -104,6 +105,12 @@ by implementing high performance rendering techniques.
 - [ ] Material System
 - [ ] Mesh Rendering
 - [ ] Compute based Culling
+
+## Contributing
+
+Everyone is welcome to contribute to the project. If you find any problems, you can submit them
+using [GitHub's issue system](https://github.com/Capati/odin-vk-guide/issues). If you want to
+contribute code or the guide, you should fork the project and then send a pull request.
 
 ## License
 
