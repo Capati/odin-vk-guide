@@ -1,12 +1,11 @@
 ---
 sidebar_position: 3
 sidebar_label: "Executing Vulkan Commands"
-description: TODO.
 ---
 
 # Vulkan Command Execution
 
-![dd](./img/vkcommands.png)
+![Vulkan Command Execution](./img/vkcommands.png)
 
 Unlike OpenGL or DirectX pre-11, in Vulkan, all GPU commands have to go through a command
 buffer, and executed through a Queue.

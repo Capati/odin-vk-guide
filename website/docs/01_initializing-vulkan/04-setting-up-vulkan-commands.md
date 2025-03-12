@@ -1,7 +1,6 @@
 ---
 sidebar_position: 4
 sidebar_label: "Setting up Vulkan Commands"
-description: TODO.
 ---
 
 # Setting up Vulkan Commands

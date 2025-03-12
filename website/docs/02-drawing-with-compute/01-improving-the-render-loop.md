@@ -1,7 +1,6 @@
 ---
 sidebar_position: 1
 sidebar_label: "Improving the render loop"
-description: TODO.
 ---
 
 # Improving the render loop

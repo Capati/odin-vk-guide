@@ -1,6 +1,5 @@
 ---
 sidebar_position: 1
-description: Instance, physical device, device, and swapchain setup.
 ---
 
 # Vulkan initialization

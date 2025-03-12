@@ -1,7 +1,6 @@
 ---
 sidebar_position: 2
 sidebar_label: "Vulkan Initialization Code"
-description: TODO.
 ---
 
 # Initializing core Vulkan structures

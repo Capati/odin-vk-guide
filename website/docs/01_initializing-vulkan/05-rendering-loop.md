@@ -1,7 +1,6 @@
 ---
 sidebar_position: 5
 sidebar_label: "Rendering Loop"
-description: TODO.
 ---
 
 # Rendering Loop
