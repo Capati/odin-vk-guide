@@ -69,6 +69,12 @@ In the `odin-vk-guide` codebase, the `/shaders/source/` directory contains two h
 the process of compiling shaders for this tutorial. To generate the necessary SPIR-V files,
 you’ll need to run the appropriate script for your platform whenever you modify or add shaders.
 
+Before running `compile.sh` on Unix for the first time, you'll need to make it executable:
+
+```bash
+chmod +x ./compile.sh
+```
+
 :::warning[Recompile the shaders]
 
 Any time you touch the shaders, make sure you compile the shaders. This process has to succeed
