@@ -67,9 +67,9 @@ pipeline.
 - [x] The graphics pipeline
 - [x] Setting up render pipeline
 - [x] Mesh buffers
-- [ ] Mesh Loading
-- [ ] Blending
-- [ ] Window Resizing
+- [x] Mesh Loading
+- [x] Blending
+- [x] Window Resizing
 
 ### 4. Textures and Engine Architecture
 
