@@ -32,10 +32,9 @@ happens if we try to resize.
 GLFW by default allows us to resize the window, handling the OS part of resizing. Run the
 engine and try to resize the window.
 
-It should give an error and crash on the VK_CHECK macros we have on either
-`vk.AcquireNextImageKHR` or `vk.QueuePresentKHR`. The error will be `ERROR_OUT_OF_DATE_KHR`. So
-to handle the resize, we need to stop the rendering if we see that error, and rebuild the
-swapchain when that happens.
+It should give an error on the `vk_check` procedure we have on either `vk.AcquireNextImageKHR`
+or `vk.QueuePresentKHR`. The error will be `ERROR_OUT_OF_DATE_KHR`. So to handle the resize, we
+need to stop the rendering if we see that error, and rebuild the swapchain when that happens.
 
 On the `engine_draw()` procedure, replace the call to `vk.AcquireNextImageKHR` to check the
 error code.
