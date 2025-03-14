@@ -185,8 +185,6 @@ engine_cleanup :: proc(self: ^Engine) {
 
 	im.destroy_context()
 
-	vma.destroy_allocator(self.vma_allocator)
-
 	engine_destroy_swapchain(self)
 
 	vk.DestroySurfaceKHR(self.vk_instance, self.vk_surface, nil)
