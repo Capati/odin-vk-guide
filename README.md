@@ -70,6 +70,7 @@ pipeline.
 - [x] Mesh Loading
 - [x] Blending
 - [x] Window Resizing
+- [x] Split Engine Logic (**Extra section**)
 
 ### 4. Textures and Engine Architecture
 
