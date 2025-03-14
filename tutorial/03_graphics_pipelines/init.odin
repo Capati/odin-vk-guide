@@ -744,6 +744,7 @@ engine_init_imgui :: proc(self: ^Engine) -> (ok: bool) {
 
 	// This initializes imgui for Vulkan
 	init_info := im_vk.Init_Info {
+		api_version = self.vkb.instance.api_version,
 		instance = self.vk_instance,
 		physical_device = self.vk_physical_device,
 		device = self.vk_device,
@@ -761,6 +762,7 @@ engine_init_imgui :: proc(self: ^Engine) -> (ok: bool) {
 	}
 
 	im_vk.load_functions(
+		self.vkb.instance.api_version,
 		proc "c" (function_name: cstring, user_data: rawptr) -> vk.ProcVoidFunction {
 			engine := cast(^Engine)user_data
 			return vk.GetInstanceProcAddr(engine.vk_instance, function_name)

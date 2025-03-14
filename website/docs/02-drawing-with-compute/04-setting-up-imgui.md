@@ -70,6 +70,7 @@ engine_init_imgui :: proc(self: ^Engine) -> (ok: bool) {
 
     // This initializes imgui for Vulkan
     init_info := im_vk.Init_Info {
+        api_version = self.vkb.instance.api_version,
         instance = self.vk_instance,
         physical_device = self.vk_physical_device,
         device = self.vk_device,
@@ -87,6 +88,7 @@ engine_init_imgui :: proc(self: ^Engine) -> (ok: bool) {
     }
 
     im_vk.load_functions(
+        self.vkb.instance.api_version,
         proc "c" (function_name: cstring, user_data: rawptr) -> vk.ProcVoidFunction {
             engine := cast(^Engine)user_data
             return vk.GetInstanceProcAddr(engine.vk_instance, function_name)
@@ -114,8 +116,15 @@ efficient space-wise.
 
 We then call `im.create_context()` , `im_glfw.init_for_vulkan`, and `im_vk.init`. These
 procedures will initialize the different parts of imgui we need. On the vulkan one, we need to
-hook a few things, like our device, instance, queue. Note that before we can use anything from
-`im_vk` we need to load the Vulkan functions first using `im_vk.load_functions`.
+hook a few things, like our device, instance, queue.
+
+:::warning[function pointers]
+
+Note that before using any procedure from `im_vk`, we need to load the Vulkan functions using
+`im_vk.load_functions`. This step ensures that the required function pointers are available for
+ImGui to use, similar to what we did previously for **VMA**.
+
+:::
 
 One important one is that we need to set `use_dynamic_rendering` to `true`, and set
 `pColorAttachmentFormats` to our swapchain format, this is because we wont be using vulkan
