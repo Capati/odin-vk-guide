@@ -9,7 +9,7 @@ In vulkan, we have to handle window resizing ourselves. As part of chapter 0 we 
 code for minimization, but resizing the window is a lot more involved.
 
 When the window resizes, the swapchain becomes invalid, and the vulkan operations with the
-swapchain like `vk..AcquireNextImageKHR` and `vk..QueuePresentKHR` can fail with a
+swapchain like `vk.AcquireNextImageKHR` and `vk.QueuePresentKHR` can fail with a
 `ERROR_OUT_OF_DATE_KHR` error. We must handle those correctly, and make sure that we can
 re-create the swapchain with a new size.
 
@@ -20,17 +20,13 @@ at startup with a preset size, and then draw into a section of it if the window 
 scale it up if the window is bigger. As we arent reallocating but just rendering into a corner,
 we can also use this same logic to perform dynamic resolution, which is a useful way of scaling
 performance, and can be handy for debugging. We are copying the rendering from the draw image
-into the swapchain with `vk..CmdBlit`, and that one performs scaling so it will work well here.
+into the swapchain with `vk.CmdBlit`, and that one performs scaling so it will work well here.
 This sort of scaling is not the highest quality, as normally you would want to perform some
 more complicated logic for the upscaling like applying some sharpening, or doing fake
 antialiasing as part of that scaling. The Imgui UI will still render into the swapchain image
 directly, so it will always render at native resolution.
 
-Lets begin by enabling the resizable flag when creating the window. Then we can see what
-happens if we try to resize.
-
-GLFW by default allows us to resize the window, handling the OS part of resizing. Run the
-engine and try to resize the window.
+GLFW by default allows us to resize the window. Run the engine and try to resize the window.
 
 It should give an error on the `vk_check` procedure we have on either `vk.AcquireNextImageKHR`
 or `vk.QueuePresentKHR`. The error will be `ERROR_OUT_OF_DATE_KHR`. So to handle the resize, we
@@ -193,17 +189,24 @@ We are setting up the draw image a bit small, but if you want, try to increase t
 draw image from the place its created in `engine_init_swapchain()`. Set the `drawImageExtent`
 to your monitor resolution instead of the `window_extent`, which is hardcoded to a small size.
 
-```odin
+```odin title="platform.odin"
+get_monitor_resolution :: proc() -> (u32, u32) {
+    mode := glfw.GetVideoMode(glfw.GetPrimaryMonitor())
+    ensure(mode != nil)
+    return u32(mode.width), u32(mode.height)
+}
+```
+
+```odin title="engine.odin"
 engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
     engine_create_swapchain(self, self.window_extent.width, self.window_extent.height) or_return
 
-    monitor := glfw.GetPrimaryMonitor()
-    mode := glfw.GetVideoMode(monitor)
+    monitor_width, monitor_height := get_monitor_resolution()
 
     // Draw image size will match the monitor resolution
     draw_image_extent := vk.Extent3D {
-        width  = u32(mode.width),
-        height = u32(mode.height),
+        width  = monitor_width,
+        height = monitor_height,
         depth  = 1,
     }
 

@@ -76,6 +76,12 @@ window_update_title_with_fps :: proc(window: glfw.WindowHandle, title: string, f
 	glfw.SetWindowTitle(window, cstring(raw_data(buffer[:])))
 }
 
+get_monitor_resolution :: proc() -> (u32, u32) {
+	mode := glfw.GetVideoMode(glfw.GetPrimaryMonitor())
+	ensure(mode != nil)
+	return u32(mode.width), u32(mode.height)
+}
+
 // -----------------------------------------------------------------------------
 // Callbacks
 // -----------------------------------------------------------------------------

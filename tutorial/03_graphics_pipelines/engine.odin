@@ -196,8 +196,6 @@ engine_cleanup :: proc(self: ^Engine) {
 	}
 	destroy_mesh_assets(&self.test_meshes)
 
-	engine_destroy_draw_image(self)
-
 	// Flush and destroy the global deletion queue
 	deletion_queue_destroy(self.main_deletion_queue)
 
@@ -382,8 +380,6 @@ engine_resize_swapchain :: proc(self: ^Engine) -> (ok: bool) {
 	self.window_extent = {u32(width), u32(height)}
 
 	engine_create_swapchain(self, self.window_extent.width, self.window_extent.height) or_return
-	engine_recreate_draw_image(self) or_return
-	engine_update_descriptors(self)
 
 	return true
 }
@@ -395,17 +391,15 @@ engine_destroy_swapchain :: proc(self: ^Engine) {
 	delete(self.swapchain_images)
 }
 
-engine_recreate_draw_image :: proc(self: ^Engine) -> (ok: bool) {
-	engine_destroy_draw_image(self)
-	engine_create_draw_image(self) or_return
-	return true
-}
+engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
+	engine_create_swapchain(self, self.window_extent.width, self.window_extent.height) or_return
 
-engine_create_draw_image :: proc(self: ^Engine) -> (ok: bool) {
-	// Draw image size will match the window
+	monitor_width, monitor_height := get_monitor_resolution()
+
+    // Draw image size will match the monitor resolution
 	draw_image_extent := vk.Extent3D {
-		width  = u32(self.swapchain_extent.width),
-		height = u32(self.swapchain_extent.height),
+		width  = monitor_width,
+		height = monitor_height,
 		depth  = 1,
 	}
 
@@ -443,9 +437,10 @@ engine_create_draw_image :: proc(self: ^Engine) -> (ok: bool) {
 			nil,
 		),
 	) or_return
-	defer if !ok {
-		vma.destroy_image(self.vma_allocator, self.draw_image.image, self.draw_image.allocation)
-	}
+	deletion_queue_push(
+		self.main_deletion_queue,
+		Image_Resource{self.draw_image.image, self.vma_allocator, self.draw_image.allocation},
+	)
 
 	// Build a image-view for the draw image to use for rendering
 	rview_info := imageview_create_info(
@@ -457,9 +452,7 @@ engine_create_draw_image :: proc(self: ^Engine) -> (ok: bool) {
 	vk_check(
 		vk.CreateImageView(self.vk_device, &rview_info, nil, &self.draw_image.image_view),
 	) or_return
-	defer if !ok {
-		vk.DestroyImageView(self.vk_device, self.draw_image.image_view, nil)
-	}
+	deletion_queue_push(self.main_deletion_queue, self.draw_image.image_view)
 
 	self.depth_image.image_format = .D32_SFLOAT
 	self.depth_image.image_extent = draw_image_extent
@@ -482,9 +475,10 @@ engine_create_draw_image :: proc(self: ^Engine) -> (ok: bool) {
 			nil,
 		),
 	) or_return
-	defer if !ok {
-		vma.destroy_image(self.vma_allocator, self.depth_image.image, self.depth_image.allocation)
-	}
+	deletion_queue_push(
+		self.main_deletion_queue,
+		Image_Resource{self.depth_image.image, self.vma_allocator, self.depth_image.allocation},
+	)
 
 	// Build a image-view for the draw image to use for rendering
 	dview_info := imageview_create_info(
@@ -496,35 +490,8 @@ engine_create_draw_image :: proc(self: ^Engine) -> (ok: bool) {
 	vk_check(
 		vk.CreateImageView(self.vk_device, &dview_info, nil, &self.depth_image.image_view),
 	) or_return
-	defer if !ok {
-		vk.DestroyImageView(self.vk_device, self.depth_image.image_view, nil)
-	}
+	deletion_queue_push(self.main_deletion_queue, self.depth_image.image_view)
 
-	return true
-}
-
-engine_destroy_draw_image :: proc(self: ^Engine) {
-	if self.draw_image.image != 0 {
-		vma.destroy_image(self.vma_allocator, self.draw_image.image, self.draw_image.allocation)
-		self.draw_image.image = 0
-	}
-	if self.draw_image.image_view != 0 {
-		vk.DestroyImageView(self.vk_device, self.draw_image.image_view, nil)
-		self.draw_image.image_view = 0
-	}
-	if self.depth_image.image != 0 {
-		vma.destroy_image(self.vma_allocator, self.depth_image.image, self.depth_image.allocation)
-		self.depth_image.image = 0
-	}
-	if self.depth_image.image_view != 0 {
-		vk.DestroyImageView(self.vk_device, self.depth_image.image_view, nil)
-		self.depth_image.image_view = 0
-	}
-}
-
-engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
-	engine_create_swapchain(self, self.window_extent.width, self.window_extent.height) or_return
-	engine_create_draw_image(self) or_return
 	return true
 }
 
@@ -961,45 +928,6 @@ engine_get_current_frame :: #force_inline proc(self: ^Engine) -> ^Frame_Data #no
 	return &self.frames[self.frame_number % FRAME_OVERLAP]
 }
 
-engine_draw_background :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool) {
-	effect := &self.background_effects[self.current_background_effect]
-
-	// Bind the gradient drawing compute pipeline
-	vk.CmdBindPipeline(cmd, .COMPUTE, effect.pipeline)
-
-	// Bind the descriptor set containing the draw image for the compute pipeline
-	vk.CmdBindDescriptorSets(
-		cmd,
-		.COMPUTE,
-		self.gradient_pipeline_layout,
-		0,
-		1,
-		&self.draw_image_descriptors,
-		0,
-		nil,
-	)
-
-	vk.CmdPushConstants(
-		cmd,
-		self.gradient_pipeline_layout,
-		{.COMPUTE},
-		0,
-		size_of(Compute_Push_Constants),
-		&effect.data,
-	)
-
-	// Execute the compute pipeline dispatch. We are using 16x16 workgroup size so
-	// we need to divide by it
-	vk.CmdDispatch(
-		cmd,
-		u32(math.ceil_f32(f32(self.draw_extent.width) / 16.0)),
-		u32(math.ceil_f32(f32(self.draw_extent.height) / 16.0)),
-		1,
-	)
-
-	return true
-}
-
 engine_ui_definition :: proc(self: ^Engine) {
 	// imgui new frame
 	im_glfw.new_frame()
@@ -1186,6 +1114,45 @@ engine_draw :: proc(self: ^Engine) -> (ok: bool) {
 
 	// Increase the number of frames drawn
 	self.frame_number += 1
+
+	return true
+}
+
+engine_draw_background :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool) {
+	effect := &self.background_effects[self.current_background_effect]
+
+	// Bind the gradient drawing compute pipeline
+	vk.CmdBindPipeline(cmd, .COMPUTE, effect.pipeline)
+
+	// Bind the descriptor set containing the draw image for the compute pipeline
+	vk.CmdBindDescriptorSets(
+		cmd,
+		.COMPUTE,
+		self.gradient_pipeline_layout,
+		0,
+		1,
+		&self.draw_image_descriptors,
+		0,
+		nil,
+	)
+
+	vk.CmdPushConstants(
+		cmd,
+		self.gradient_pipeline_layout,
+		{.COMPUTE},
+		0,
+		size_of(Compute_Push_Constants),
+		&effect.data,
+	)
+
+	// Execute the compute pipeline dispatch. We are using 16x16 workgroup size so
+	// we need to divide by it
+	vk.CmdDispatch(
+		cmd,
+		u32(math.ceil_f32(f32(self.draw_extent.width) / 16.0)),
+		u32(math.ceil_f32(f32(self.draw_extent.height) / 16.0)),
+		1,
+	)
 
 	return true
 }
