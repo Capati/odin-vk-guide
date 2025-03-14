@@ -9,3 +9,4 @@
 [submodule "libs/imgui"]
 	path = libs/imgui
 	url = https://github.com/Capati/odin-imgui.git
+	ignore = all
