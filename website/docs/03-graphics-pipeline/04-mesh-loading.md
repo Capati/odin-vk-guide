@@ -6,8 +6,10 @@ sidebar_label: "Mesh Loading"
 # Mesh Loading
 
 We will do proper scene loading later, but until we go there, we need something better than a
-rectangle as a mesh. For that, we will begin to load **GLTF** files but in a very simplified and
-wrong way, getting only the geometry data and ignoring everything else.
+rectangle as a mesh. For that, we will begin to load **GLTF** files but in a very simplified
+and wrong way, getting only the geometry data and ignoring everything else. To accomplish this,
+we are using the `cgltf` library provided through the vendor package, which offers a lightweight
+solution for parsing GLTF files.
 
 There is a **glTF** file that came with the starting-point repository, called `basicmesh.glb`.
 That one has a cube, a sphere, and a monkey head meshes centered in the origin. Being a file as
@@ -19,6 +21,21 @@ separation is for meshes that use multiple materials, and thus need multiple dra
 it. The file also contains a scene-tree of scenenodes, some of them containing meshes. We will
 only be loading the meshes now, but later we will have the full scene-tree and materials
 loaded.
+
+:::warning[Binaries]
+
+The `cgltf` vendor package currently provides precompiled binaries only for Windows. If you're
+using a Unix-based system (e.g., Linux or macOS), you'll need to compile the library yourself.
+Fortunately, Odin includes a `Makefile` script to simplify this process, located at
+`<path-to-odin>/vendor/cgltf/src`. Run one of the following commands based on your operating
+system:
+
+```bash
+make linux   # For Linux
+make darwin  # For macOS
+```
+
+:::
 
 Our loading code will all be on the file `loader.odin`. Lets start by adding a couple of
 `import`'s and structures we will need.
