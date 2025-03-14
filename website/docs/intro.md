@@ -4,7 +4,7 @@ sidebar_position: 1
 sidebar_label: "Home"
 ---
 
-# Welcome to VulkanGuide
+# Welcome to Odin VulkanGuide
 
 ![scene](./img/fullscene.png)
 End stage after the tutorial
