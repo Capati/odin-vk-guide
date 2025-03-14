@@ -814,7 +814,8 @@ engine_init_mesh_pipeline :: proc(self: ^Engine) -> (ok: bool) {
 	// No multisampling
 	pipeline_builder_set_multisampling_none(&builder)
 	// No blending
-	pipeline_builder_disable_blending(&builder)
+	// pipeline_builder_disable_blending(&builder)
+	pipeline_builder_enable_blending_additive(&builder)
 	// No depth testing
 	// pipeline_builder_disable_depth_test(&builder)
 	pipeline_builder_enable_depth_test(&builder, true, .GREATER_OR_EQUAL)
