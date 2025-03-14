@@ -34,6 +34,38 @@ Allocated_Image :: struct {
 	image_format: vk.Format,
 }
 
+engine_immediate_submit :: proc(
+	self: ^Engine,
+	data: $T,
+	fn: proc(engine: ^Engine, cmd: vk.CommandBuffer, data: T),
+) -> (
+	ok: bool,
+) {
+	vk_check(vk.ResetFences(self.vk_device, 1, &self.imm_fence)) or_return
+	vk_check(vk.ResetCommandBuffer(self.imm_command_buffer, {})) or_return
+
+	cmd := self.imm_command_buffer
+
+	cmd_begin_info := command_buffer_begin_info({.ONE_TIME_SUBMIT})
+
+	vk_check(vk.BeginCommandBuffer(cmd, &cmd_begin_info)) or_return
+
+	fn(self, cmd, data)
+
+	vk_check(vk.EndCommandBuffer(cmd)) or_return
+
+	cmd_info := command_buffer_submit_info(cmd)
+	submit_info := submit_info(&cmd_info, nil, nil)
+
+	// Submit command buffer to the queue and execute it.
+	//  `render_fence` will now block until the graphic commands finish execution
+	vk_check(vk.QueueSubmit2(self.graphics_queue, 1, &submit_info, self.imm_fence)) or_return
+
+	vk_check(vk.WaitForFences(self.vk_device, 1, &self.imm_fence, true, 9999999999)) or_return
+
+	return true
+}
+
 Allocated_Buffer :: struct {
 	buffer:     vk.Buffer,
 	allocation: vma.Allocation,
