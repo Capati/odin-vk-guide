@@ -717,33 +717,33 @@ engine_init_imgui :: proc(self: ^Engine) -> (ok: bool) {
 	im_glfw.init_for_vulkan(self.window, true) or_return
 	defer if !ok {im_glfw.shutdown()}
 
-    // This initializes imgui for Vulkan
-    init_info := im_vk.Init_Info {
-        api_version = self.vkb.instance.api_version,
-        instance = self.vk_instance,
-        physical_device = self.vk_physical_device,
-        device = self.vk_device,
-        queue = self.graphics_queue,
-        descriptor_pool = imgui_pool,
-        min_image_count = 3,
-        image_count = 3,
-        use_dynamic_rendering = true,
-        pipeline_rendering_create_info = {
-            sType = .PIPELINE_RENDERING_CREATE_INFO,
-            colorAttachmentCount = 1,
-            pColorAttachmentFormats = &self.swapchain_format,
-        },
-        msaa_samples = ._1,
-    }
+	// This initializes imgui for Vulkan
+	init_info := im_vk.Init_Info {
+		api_version = self.vkb.instance.api_version,
+		instance = self.vk_instance,
+		physical_device = self.vk_physical_device,
+		device = self.vk_device,
+		queue = self.graphics_queue,
+		descriptor_pool = imgui_pool,
+		min_image_count = 3,
+		image_count = 3,
+		use_dynamic_rendering = true,
+		pipeline_rendering_create_info = {
+			sType = .PIPELINE_RENDERING_CREATE_INFO,
+			colorAttachmentCount = 1,
+			pColorAttachmentFormats = &self.swapchain_format,
+		},
+		msaa_samples = ._1,
+	}
 
-    im_vk.load_functions(
-        self.vkb.instance.api_version,
-        proc "c" (function_name: cstring, user_data: rawptr) -> vk.ProcVoidFunction {
-            engine := cast(^Engine)user_data
-            return vk.GetInstanceProcAddr(engine.vk_instance, function_name)
-        },
-        self,
-    ) or_return
+	im_vk.load_functions(
+		self.vkb.instance.api_version,
+		proc "c" (function_name: cstring, user_data: rawptr) -> vk.ProcVoidFunction {
+			engine := cast(^Engine)user_data
+			return vk.GetInstanceProcAddr(engine.vk_instance, function_name)
+		},
+		self,
+	) or_return
 
 	im_vk.init(&init_info) or_return
 	defer if !ok {im_vk.shutdown()}
