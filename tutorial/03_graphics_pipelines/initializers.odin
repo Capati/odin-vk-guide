@@ -121,14 +121,15 @@ depth_attachment_info :: proc(
 	view: vk.ImageView,
 	layout: vk.ImageLayout = .COLOR_ATTACHMENT_OPTIMAL,
 ) -> vk.RenderingAttachmentInfo {
-	depthAttachment := vk.RenderingAttachmentInfo {
+	depth_attachment := vk.RenderingAttachmentInfo {
 		sType       = .RENDERING_ATTACHMENT_INFO,
 		imageView   = view,
 		imageLayout = layout,
 		loadOp      = .CLEAR,
 		storeOp     = .STORE,
 	}
-	return depthAttachment
+	depth_attachment.clearValue.depthStencil.depth = 0.0
+	return depth_attachment
 }
 
 rendering_info :: proc(

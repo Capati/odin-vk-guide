@@ -98,16 +98,15 @@ Engine :: struct {
 
 	// Rendering resources
 	draw_image:                   Allocated_Image,
+	depth_image:                  Allocated_Image,
 	draw_extent:                  vk.Extent2D,
 	render_scale:                 f32,
 	gradient_pipeline_layout:     vk.PipelineLayout,
 	background_effects:           [Compute_Effect_Kind]Compute_Effect,
 	current_background_effect:    Compute_Effect_Kind,
-	triangle_pipeline_layout:     vk.PipelineLayout,
-	triangle_pipeline:            vk.Pipeline,
 	mesh_pipeline_layout:         vk.PipelineLayout,
 	mesh_pipeline:                vk.Pipeline,
-	rectangle:                    GPU_Mesh_Buffers,
+	test_meshes:                  Mesh_Asset_List,
 
 	// Helper libraries
 	vkb:                          struct {
@@ -190,6 +189,14 @@ engine_cleanup :: proc(self: ^Engine) {
 		// Flush and destroy the peer frame deletion queue
 		deletion_queue_destroy(frame.deletion_queue)
 	}
+
+	for &mesh in self.test_meshes {
+		destroy_buffer(self, mesh.mesh_buffers.index_buffer)
+		destroy_buffer(self, mesh.mesh_buffers.vertex_buffer)
+	}
+	destroy_mesh_assets(&self.test_meshes)
+
+	engine_destroy_draw_image(self)
 
 	// Flush and destroy the global deletion queue
 	deletion_queue_destroy(self.main_deletion_queue)
@@ -375,6 +382,8 @@ engine_resize_swapchain :: proc(self: ^Engine) -> (ok: bool) {
 	self.window_extent = {u32(width), u32(height)}
 
 	engine_create_swapchain(self, self.window_extent.width, self.window_extent.height) or_return
+	engine_recreate_draw_image(self) or_return
+	engine_update_descriptors(self)
 
 	return true
 }
@@ -386,16 +395,17 @@ engine_destroy_swapchain :: proc(self: ^Engine) {
 	delete(self.swapchain_images)
 }
 
-engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
-	engine_create_swapchain(self, self.window_extent.width, self.window_extent.height) or_return
+engine_recreate_draw_image :: proc(self: ^Engine) -> (ok: bool) {
+	engine_destroy_draw_image(self)
+	engine_create_draw_image(self) or_return
+	return true
+}
 
-	monitor := glfw.GetPrimaryMonitor()
-	mode := glfw.GetVideoMode(monitor)
-
+engine_create_draw_image :: proc(self: ^Engine) -> (ok: bool) {
 	// Draw image size will match the window
 	draw_image_extent := vk.Extent3D {
-		width  = u32(mode.width),
-		height = u32(mode.height),
+		width  = u32(self.swapchain_extent.width),
+		height = u32(self.swapchain_extent.height),
 		depth  = 1,
 	}
 
@@ -433,6 +443,9 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
 			nil,
 		),
 	) or_return
+	defer if !ok {
+		vma.destroy_image(self.vma_allocator, self.draw_image.image, self.draw_image.allocation)
+	}
 
 	// Build a image-view for the draw image to use for rendering
 	rview_info := imageview_create_info(
@@ -444,14 +457,74 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
 	vk_check(
 		vk.CreateImageView(self.vk_device, &rview_info, nil, &self.draw_image.image_view),
 	) or_return
+	defer if !ok {
+		vk.DestroyImageView(self.vk_device, self.draw_image.image_view, nil)
+	}
 
-	// Add to deletion queues
-	deletion_queue_push(self.main_deletion_queue, self.draw_image.image_view)
-	deletion_queue_push(
-		self.main_deletion_queue,
-		Image_Resource{self.draw_image.image, self.vma_allocator, self.draw_image.allocation},
+	self.depth_image.image_format = .D32_SFLOAT
+	self.depth_image.image_extent = draw_image_extent
+	depth_image_usages := vk.ImageUsageFlags{.DEPTH_STENCIL_ATTACHMENT}
+
+	dimg_info := image_create_info(
+		self.depth_image.image_format,
+		depth_image_usages,
+		draw_image_extent,
 	)
 
+	// Allocate and create the image
+	vk_check(
+		vma.create_image(
+			self.vma_allocator,
+			dimg_info,
+			rimg_allocinfo,
+			&self.depth_image.image,
+			&self.depth_image.allocation,
+			nil,
+		),
+	) or_return
+	defer if !ok {
+		vma.destroy_image(self.vma_allocator, self.depth_image.image, self.depth_image.allocation)
+	}
+
+	// Build a image-view for the draw image to use for rendering
+	dview_info := imageview_create_info(
+		self.depth_image.image_format,
+		self.depth_image.image,
+		{.DEPTH},
+	)
+
+	vk_check(
+		vk.CreateImageView(self.vk_device, &dview_info, nil, &self.depth_image.image_view),
+	) or_return
+	defer if !ok {
+		vk.DestroyImageView(self.vk_device, self.depth_image.image_view, nil)
+	}
+
+	return true
+}
+
+engine_destroy_draw_image :: proc(self: ^Engine) {
+	if self.draw_image.image != 0 {
+		vma.destroy_image(self.vma_allocator, self.draw_image.image, self.draw_image.allocation)
+		self.draw_image.image = 0
+	}
+	if self.draw_image.image_view != 0 {
+		vk.DestroyImageView(self.vk_device, self.draw_image.image_view, nil)
+		self.draw_image.image_view = 0
+	}
+	if self.depth_image.image != 0 {
+		vma.destroy_image(self.vma_allocator, self.depth_image.image, self.depth_image.allocation)
+		self.depth_image.image = 0
+	}
+	if self.depth_image.image_view != 0 {
+		vk.DestroyImageView(self.vk_device, self.depth_image.image_view, nil)
+		self.depth_image.image_view = 0
+	}
+}
+
+engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
+	engine_create_swapchain(self, self.window_extent.width, self.window_extent.height) or_return
+	engine_create_draw_image(self) or_return
 	return true
 }
 
@@ -570,6 +643,15 @@ engine_init_descriptors :: proc(self: ^Engine) -> (ok: bool) {
 		&self.draw_image_descriptor_layout,
 	) or_return
 
+	engine_update_descriptors(self)
+
+	deletion_queue_push(self.main_deletion_queue, self.global_descriptor_allocator.pool)
+	deletion_queue_push(self.main_deletion_queue, self.draw_image_descriptor_layout)
+
+	return true
+}
+
+engine_update_descriptors :: proc(self: ^Engine) {
 	img_info := vk.DescriptorImageInfo {
 		imageLayout = .GENERAL,
 		imageView   = self.draw_image.image_view,
@@ -585,11 +667,6 @@ engine_init_descriptors :: proc(self: ^Engine) -> (ok: bool) {
 	}
 
 	vk.UpdateDescriptorSets(self.vk_device, 1, &draw_image_write, 0, nil)
-
-	deletion_queue_push(self.main_deletion_queue, self.global_descriptor_allocator.pool)
-	deletion_queue_push(self.main_deletion_queue, self.draw_image_descriptor_layout)
-
-	return true
 }
 
 engine_init_background_pipeline :: proc(self: ^Engine) -> (ok: bool) {
@@ -689,63 +766,6 @@ engine_init_background_pipeline :: proc(self: ^Engine) -> (ok: bool) {
 	return true
 }
 
-engine_init_triangle_pipeline :: proc(self: ^Engine) -> (ok: bool) {
-	triangle_frag_shader := create_shader_module(
-		self.vk_device,
-		#load("./../../shaders/compiled/colored_triangle.frag.spv"),
-	) or_return
-	defer vk.DestroyShaderModule(self.vk_device, triangle_frag_shader, nil)
-
-	triangle_vert_shader := create_shader_module(
-		self.vk_device,
-		#load("./../../shaders/compiled/colored_triangle.vert.spv"),
-	) or_return
-	defer vk.DestroyShaderModule(self.vk_device, triangle_vert_shader, nil)
-
-	// Build the pipeline layout that controls the inputs/outputs of the shader, we are not
-	// using descriptor sets or other systems yet, so no need to use anything other than empty
-	// default
-	pipeline_layout_info := pipeline_layout_create_info()
-	vk_check(
-		vk.CreatePipelineLayout(
-			self.vk_device,
-			&pipeline_layout_info,
-			nil,
-			&self.triangle_pipeline_layout,
-		),
-	) or_return
-	deletion_queue_push(self.main_deletion_queue, self.triangle_pipeline_layout)
-
-	builder := pipeline_builder_create_default()
-
-	// Use the triangle layout we created
-	builder.pipeline_layout = self.triangle_pipeline_layout
-	// Add the vertex and pixel shaders to the pipeline
-	pipeline_builder_set_shaders(&builder, triangle_vert_shader, triangle_frag_shader)
-	// It will draw triangles
-	pipeline_builder_set_input_topology(&builder, .TRIANGLE_LIST)
-	// Filled triangles
-	pipeline_builder_set_polygon_mode(&builder, .FILL)
-	// No backface culling
-	pipeline_builder_set_cull_mode(&builder, vk.CullModeFlags_NONE, .CLOCKWISE)
-	// No multisampling
-	pipeline_builder_set_multisampling_none(&builder)
-	// No blending
-	pipeline_builder_disable_blending(&builder)
-	// No depth testing
-	pipeline_builder_disable_depth_test(&builder)
-
-	// Connect the image format we will draw into, from draw image
-	pipeline_builder_set_color_attachment_format(&builder, self.draw_image.image_format)
-	pipeline_builder_set_depth_attachment_format(&builder, .UNDEFINED)
-
-	// Finally build the pipeline
-	self.triangle_pipeline = pipeline_builder_build(&builder, self.vk_device) or_return
-	deletion_queue_push(self.main_deletion_queue, self.triangle_pipeline)
-
-	return true
-}
-
 engine_init_mesh_pipeline :: proc(self: ^Engine) -> (ok: bool) {
 	triangle_frag_shader := create_shader_module(
 		self.vk_device,
@@ -796,11 +816,12 @@ engine_init_mesh_pipeline :: proc(self: ^Engine) -> (ok: bool) {
 	// No blending
 	pipeline_builder_disable_blending(&builder)
 	// No depth testing
-	pipeline_builder_disable_depth_test(&builder)
+	// pipeline_builder_disable_depth_test(&builder)
+	pipeline_builder_enable_depth_test(&builder, true, .GREATER_OR_EQUAL)
 
 	// Connect the image format we will draw into, from draw image
 	pipeline_builder_set_color_attachment_format(&builder, self.draw_image.image_format)
-	pipeline_builder_set_depth_attachment_format(&builder, .UNDEFINED)
+	pipeline_builder_set_depth_attachment_format(&builder, self.depth_image.image_format)
 
 	// Finally build the pipeline
 	self.mesh_pipeline = pipeline_builder_build(&builder, self.vk_device) or_return
@@ -814,7 +835,7 @@ engine_init_pipelines :: proc(self: ^Engine) -> (ok: bool) {
 	engine_init_background_pipeline(self) or_return
 
 	// Graphics pipelines
-	engine_init_triangle_pipeline(self) or_return
+	// engine_init_triangle_pipeline(self) or_return
 	engine_init_mesh_pipeline(self) or_return
 
 	return true
@@ -927,39 +948,10 @@ engine_init_imgui :: proc(self: ^Engine) -> (ok: bool) {
 }
 
 engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
-	// odinfmt: disable
-	rect_vertices := [4]Vertex{
-		{ position = { 0.5, -0.5, 0.0 }, color = { 0.0, 0.0, 0.0, 1.0 }},
-		{ position = { 0.5,  0.5, 0.0 }, color = { 0.5, 0.5, 0.5, 1.0 }},
-		{ position = {-0.5, -0.5, 0.0 }, color = { 1.0, 0.0, 0.0, 1.0 }},
-		{ position = {-0.5,  0.5, 0.0 }, color = { 0.0, 1.0, 0.0, 1.0 }},
+	self.test_meshes = load_gltf_meshes(self, "assets/basicmesh.glb") or_return
+	defer if !ok {
+		destroy_mesh_assets(&self.test_meshes)
 	}
-
-	rect_indices := [6]u32{
-		0, 1, 2,
-		2, 1, 3,
-	}
-	// odinfmt: enable
-
-	self.rectangle = upload_mesh(self, rect_indices[:], rect_vertices[:]) or_return
-
-	// Delete the rectangle data on engine shutdown
-	deletion_queue_push(
-		self.main_deletion_queue,
-		Allocated_Buffer_Resource {
-			self.rectangle.index_buffer.buffer,
-			self.vma_allocator,
-			self.rectangle.index_buffer.allocation,
-		},
-	)
-	deletion_queue_push(
-		self.main_deletion_queue,
-		Allocated_Buffer_Resource {
-			self.rectangle.vertex_buffer.buffer,
-			self.vma_allocator,
-			self.rectangle.vertex_buffer.allocation,
-		},
-	)
 
 	return true
 }
@@ -1113,6 +1105,7 @@ engine_draw :: proc(self: ^Engine) -> (ok: bool) {
 	engine_draw_background(self, cmd) or_return
 
 	transition_image(cmd, self.draw_image.image, .GENERAL, .COLOR_ATTACHMENT_OPTIMAL)
+	transition_image(cmd, self.depth_image.image, .UNDEFINED, .DEPTH_ATTACHMENT_OPTIMAL)
 
 	// Draw the triangle
 	engine_draw_geometry(self, cmd) or_return
@@ -1220,11 +1213,15 @@ engine_draw_imgui :: proc(
 engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool) {
 	// Begin a render pass connected to our draw image
 	color_attachment := attachment_info(self.draw_image.image_view, nil, .COLOR_ATTACHMENT_OPTIMAL)
+	depth_attachment := depth_attachment_info(
+		self.depth_image.image_view,
+		.DEPTH_ATTACHMENT_OPTIMAL,
+	)
 
-	render_info := rendering_info(self.draw_extent, &color_attachment, nil)
+	render_info := rendering_info(self.draw_extent, &color_attachment, &depth_attachment)
 	vk.CmdBeginRendering(cmd, &render_info)
 
-	vk.CmdBindPipeline(cmd, .GRAPHICS, self.triangle_pipeline)
+	vk.CmdBindPipeline(cmd, .GRAPHICS, self.mesh_pipeline)
 
 	// Set dynamic viewport and scissor
 	viewport := vk.Viewport {
@@ -1245,14 +1242,46 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
 
 	vk.CmdSetScissor(cmd, 0, 1, &scissor)
 
-	// Launch a draw command to draw 3 vertices
-	vk.CmdDraw(cmd, 3, 1, 0, 0)
+	matrix4_perspective_reverse_z_f32 :: proc "contextless" (
+		fovy, aspect, near: f32,
+		flip_y_axis := true,
+	) -> (
+		m: la.Matrix4f32,
+	) #no_bounds_check {
+		epsilon :: 0.00000095367431640625 // 2^-20 or about 10^-6
+		fov_scale := 1 / math.tan(fovy * 0.5)
 
-	vk.CmdBindPipeline(cmd, .GRAPHICS, self.mesh_pipeline)
+		m[0, 0] = fov_scale / aspect
+		m[1, 1] = fov_scale
 
+		// Set up reverse-Z configuration
+		m[2, 2] = epsilon
+		m[2, 3] = near * (1 - epsilon)
+		m[3, 2] = -1
+
+		// Handle Vulkan Y-flip if needed
+		if flip_y_axis {
+			m[1, 1] = -m[1, 1]
+		}
+
+		return
+	}
+
+	// Create view matrix - place camera at positive Z looking at origin
+	view := la.matrix4_translate_f32({0, 0, -5})
+
+	// Create infinite perspective projection matrix with REVERSED depth
+	projection := matrix4_perspective_reverse_z_f32(
+		f32(la.to_radians(70.0)),
+		f32(self.draw_extent.width) / f32(self.draw_extent.height),
+		0.1,
+		true, // Invert the Y direction to match OpenGL and glTF axis conventions
+	)
+
+	// Monkey - ensure matrix order matches shader expectations
 	push_constants := GPU_Draw_Push_Constants {
-		world_matrix  = la.MATRIX4F32_IDENTITY,
-		vertex_buffer = self.rectangle.vertex_buffer_address,
+		world_matrix  = projection * view,
+		vertex_buffer = self.test_meshes[2].mesh_buffers.vertex_buffer_address,
 	}
 
 	vk.CmdPushConstants(
@@ -1263,9 +1292,16 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
 		size_of(GPU_Draw_Push_Constants),
 		&push_constants,
 	)
-	vk.CmdBindIndexBuffer(cmd, self.rectangle.index_buffer.buffer, 0, .UINT32)
+	vk.CmdBindIndexBuffer(cmd, self.test_meshes[2].mesh_buffers.index_buffer.buffer, 0, .UINT32)
 
-	vk.CmdDrawIndexed(cmd, 6, 1, 0, 0, 0)
+	vk.CmdDrawIndexed(
+		cmd,
+		self.test_meshes[2].surfaces[0].count,
+		1,
+		self.test_meshes[2].surfaces[0].start_index,
+		0,
+		0,
+	)
 
 	vk.CmdEndRendering(cmd)
 

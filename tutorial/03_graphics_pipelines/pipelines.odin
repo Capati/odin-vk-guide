@@ -339,6 +339,22 @@ pipeline_builder_disable_depth_test :: proc(self: ^Pipeline_Builder) {
 	self.depth_stencil.maxDepthBounds = 1.0
 }
 
+pipeline_builder_enable_depth_test :: proc(
+	self: ^Pipeline_Builder,
+	depth_write_enable: bool,
+	op: vk.CompareOp,
+) {
+	self.depth_stencil.depthTestEnable = true
+	self.depth_stencil.depthWriteEnable = b32(depth_write_enable)
+	self.depth_stencil.depthCompareOp = op
+	self.depth_stencil.depthBoundsTestEnable = false
+	self.depth_stencil.stencilTestEnable = false
+	self.depth_stencil.front = {}
+	self.depth_stencil.back = {}
+	self.depth_stencil.minDepthBounds = 0.0
+	self.depth_stencil.maxDepthBounds = 1.0
+}
+
 pipeline_builder_set_tessellation :: proc(self: ^Pipeline_Builder, patch_control_points: u32) {
 	self.tessellation_state.patchControlPoints = patch_control_points
 }
