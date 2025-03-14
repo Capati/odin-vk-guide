@@ -237,7 +237,7 @@ engine_draw_imgui :: proc(
     ok: bool,
 ) {
     color_attachment := attachment_info(target_view, nil, .GENERAL)
-    render_info := rendering_info(self.vkb.swapchain.extent, &color_attachment, nil)
+    render_info := rendering_info(self.swapchain_extent, &color_attachment, nil)
 
     vk.CmdBeginRendering(cmd, &render_info)
 
@@ -262,7 +262,7 @@ copy_image_to_image(
     self.draw_image.image,
     self.swapchain_images[frame.swapchain_image_index],
     self.draw_extent,
-    self.vkb.swapchain.extent,
+    self.swapchain_extent,
 )
 
 // Set swapchain image layout to Attachment Optimal so we can draw it

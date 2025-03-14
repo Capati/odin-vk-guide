@@ -41,6 +41,7 @@ Engine :: struct {
 	// Swapchain
 	vk_swapchain:          vk.SwapchainKHR,
 	swapchain_format:      vk.Format,
+	swapchain_extent:      vk.Extent2D,
 	swapchain_images:      []vk.Image,
 	swapchain_image_views: []vk.ImageView,
 
@@ -264,6 +265,7 @@ engine_create_swapchain :: proc(self: ^Engine, extent: vk.Extent2D) -> (ok: bool
 
 	self.vkb.swapchain = vkb.build_swapchain(&builder) or_return
 	self.vk_swapchain = self.vkb.swapchain.handle
+	self.swapchain_extent = self.vkb.swapchain.extent
 
 	self.swapchain_images = vkb.swapchain_get_images(self.vkb.swapchain) or_return
 	self.swapchain_image_views = vkb.swapchain_get_image_views(self.vkb.swapchain) or_return

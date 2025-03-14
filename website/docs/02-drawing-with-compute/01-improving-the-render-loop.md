@@ -668,7 +668,7 @@ copy_image_to_image(
     self.draw_image.image,
     self.swapchain_images[frame.swapchain_image_index],
     self.draw_extent,
-    self.vkb.swapchain.extent,
+    self.swapchain_extent,
 )
 
 // Set swapchain image layout to Attachment Optimal so we can draw it

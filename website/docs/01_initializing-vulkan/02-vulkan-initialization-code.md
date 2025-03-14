@@ -300,7 +300,7 @@ If you run the project right now, it will crash if you dont have a gpu with the 
 features or vulkan drivers that dont support them. If that happens, make sure your drivers are
 updated.
 
-## Setting up the swapchain
+## Setting Up The Swapchain
 
 Last thing from the core initialization is to initialize the swapchain, so we can have
 something to render into.
@@ -313,6 +313,7 @@ Engine :: struct {
 
     // Swapchain
     vk_swapchain:          vk.SwapchainKHR,
+    swapchain_extent:      vk.Extent2D,
     swapchain_format:      vk.Format,
     swapchain_images:      []vk.Image,
     swapchain_image_views: []vk.ImageView,
@@ -331,8 +332,8 @@ engine_destroy_swapchain :: proc(self: ^Engine) {
 }
 ```
 
-We are storing the `vk.SwapchainKHR` itself, alongside the format that the swapchain images use
-when rendering to them.
+We are storing the `vk.SwapchainKHR` itself, alongside the format and extent that the swapchain
+images use when rendering to them.
 
 We also store 2 arrays, one of `Image`s, and another of `ImageView`s.
 
@@ -362,6 +363,7 @@ engine_create_swapchain :: proc(self: ^Engine, extent: vk.Extent2D) -> (ok: bool
 
     self.vkb.swapchain = vkb.build_swapchain(&builder) or_return
     self.vk_swapchain = self.vkb.swapchain.handle
+    self.swapchain_extent = self.vkb.swapchain.extent
 
     self.swapchain_images = vkb.swapchain_get_images(self.vkb.swapchain) or_return
     self.swapchain_image_views = vkb.swapchain_get_image_views(self.vkb.swapchain) or_return
@@ -405,7 +407,7 @@ We first delete the swapchain object, which will delete the images it holds inte
 have to destroy the ImageViews for those images. We also free the memory allocated for the
 slices.
 
-## Cleaning up resources
+## Cleaning Up Resources
 
 We need to make sure that all of the Vulkan resources we create are correctly deleted, when the
 app exists.
@@ -448,7 +450,7 @@ emitting errors.
 There is no need to destroy the Images in this specific case, because the images are owned and
 destroyed with the swapchain.
 
-## Validation layer errors
+## Validation Layer Errors
 
 Just to check that our validation layers are working, let's try to call the destruction
 procedures in the wrong order.
