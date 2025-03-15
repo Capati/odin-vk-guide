@@ -320,7 +320,7 @@ Resource :: union {
 
 deletion_queue_flush :: proc(queue: ^Deletion_Queue) {
     #reverse for &resource in queue.resources {
-        switch res in resource {
+        switch &res in resource {
         // Higher-level custom resources
         case ^Allocated_Buffer:
             destroy_buffer(res)
