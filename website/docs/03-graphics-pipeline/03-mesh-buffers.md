@@ -128,7 +128,7 @@ engine_init_commands :: proc(self: ^Engine) -> (ok: bool) {
         vk.AllocateCommandBuffers(self.vk_device, &cmd_alloc_info, &self.imm_command_buffer),
     ) or_return
 
-    deletion_queue_push(self.main_deletion_queue, self.imm_command_pool)
+    deletion_queue_push(&self.main_deletion_queue, self.imm_command_pool)
 
     return true
 }
@@ -146,7 +146,7 @@ engine_init_sync_structures :: proc(self: ^Engine) -> (ok: bool) {
 
     vk_check(vk.CreateFence(self.vk_device, &fence_create_info, nil, &self.imm_fence)) or_return
 
-    deletion_queue_push(self.main_deletion_queue, self.imm_fence)
+    deletion_queue_push(&self.main_deletion_queue, self.imm_fence)
 
     return true
 }
@@ -220,14 +220,16 @@ Add this to `core.odin`.
 ```odin
 Allocated_Buffer :: struct {
     buffer:     vk.Buffer,
-    allocation: vma.Allocation,
     info:       vma.Allocation_Info,
+    allocation: vma.Allocation,
+    allocator:  vma.Allocator,
 }
 ```
 
 We will use this structure to hold the data for a given buffer. We have the `vk.Buffer` which
 is the vulkan handle, and the `vma.Allocation` and `vma.AllocationInfo` which contains metadata
-about the buffer and its allocation, needed to be able to free the buffer.
+about the buffer and its allocation, needed to be able to free the buffer. We also store the
+`vma.Allocator` for use on cleanup later.
 
 Lets add a `create_buffer` procedure into `core.odin`. We will take an allocation size, the
 usage flags, and the vma memory usage so that we can control where the buffer memory is.
@@ -255,6 +257,8 @@ create_buffer :: proc(
         usage = memory_usage,
         flags = {.Mapped},
     }
+
+    new_buffer.allocator = self.vma_allocator
 
     // allocate the buffer
     vk_check(
@@ -297,11 +301,31 @@ map the pointer automatically so we can write to the memory, as long as the buff
 from CPU. VMA will store that pointer as part of the allocationInfo.
 
 With a create buffer procedure, we also need a destroy buffer procedure. The only thing we need
-to do is to call vmaDestroyBuffer
+to do is to call `vma.destroy_buffer`.
 
 ```odin
-destroy_buffer :: proc(self: ^Engine, buffer: Allocated_Buffer) {
-    vma.destroy_buffer(self.vma_allocator, buffer.buffer, buffer.allocation)
+destroy_buffer :: proc(self: ^Allocated_Buffer) {
+    vma.destroy_buffer(self.allocator, self.buffer, self.allocation)
+}
+```
+
+Lets update our deletion queue to handle the destruction of allocated buffers. Here is the
+relevant code with other parts omitted:
+
+```odin title="deletion_queue.odin"
+Resource :: union {
+    // Higher-level custom resources
+    ^Allocated_Buffer,
+}
+
+deletion_queue_flush :: proc(queue: ^Deletion_Queue) {
+    #reverse for &resource in queue.resources {
+        switch res in resource {
+        // Higher-level custom resources
+        case ^Allocated_Buffer:
+            destroy_buffer(res)
+        }
+    }
 }
 ```
 
@@ -368,7 +392,7 @@ upload_mesh :: proc(
         .Gpu_Only,
     ) or_return
     defer if !ok {
-        destroy_buffer(self, new_surface.vertex_buffer)
+        destroy_buffer(&new_surface.vertex_buffer)
     }
 
     // Find the address of the vertex buffer
@@ -389,7 +413,7 @@ upload_mesh :: proc(
         .Gpu_Only,
     ) or_return
     defer if !ok {
-        destroy_buffer(self, new_surface.index_buffer)
+        destroy_buffer(&new_surface.index_buffer)
     }
 
     return new_surface, true
@@ -439,7 +463,7 @@ upload_mesh :: proc(
         {.TRANSFER_SRC},
         .Cpu_Only,
     ) or_return
-    defer destroy_buffer(self, staging)
+    defer destroy_buffer(&staging)
 
     data := staging.info.mapped_data
     // Copy vertex buffer
@@ -668,7 +692,7 @@ engine_init_mesh_pipeline :: proc(self: ^Engine) -> (ok: bool) {
             &self.triangle_pipeline_layout,
         ),
     ) or_return
-    deletion_queue_push(self.main_deletion_queue, self.triangle_pipeline_layout)
+    deletion_queue_push(&self.main_deletion_queue, self.triangle_pipeline_layout)
 
     return true
 }
@@ -709,7 +733,7 @@ engine_init_mesh_pipeline :: proc(self: ^Engine) -> (ok: bool) {
 
     // Finally build the pipeline
     self.mesh_pipeline = pipeline_builder_build(&builder, self.vk_device) or_return
-    deletion_queue_push(self.main_deletion_queue, self.mesh_pipeline)
+    deletion_queue_push(&self.main_deletion_queue, self.mesh_pipeline)
 
     return true
 }
@@ -753,22 +777,8 @@ engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
     rectangle := upload_mesh(self, rect_indices[:], rect_vertices[:]) or_return
 
     // Delete the rectangle data on engine shutdown
-    deletion_queue_push(
-        self.main_deletion_queue,
-        Allocated_Buffer_Resource {
-            rectangle.index_buffer.buffer,
-            self.vma_allocator,
-            rectangle.index_buffer.allocation,
-        },
-    )
-    deletion_queue_push(
-        self.main_deletion_queue,
-        Allocated_Buffer_Resource {
-            rectangle.vertex_buffer.buffer,
-            self.vma_allocator,
-            rectangle.vertex_buffer.allocation,
-        },
-    )
+    deletion_queue_push(&self.main_deletion_queue, &rectangle.index_buffer)
+    deletion_queue_push(&self.main_deletion_queue, &rectangle.vertex_buffer)
 
     return true
 }
@@ -776,30 +786,6 @@ engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
 
 We create 2 arrays for vertices and indices, and call the `upload_mesh` procedure to convert it
 all into buffers.
-
-Now we need to update our deletion queue to handle the destruction of allocated buffers. Here
-is the relevant code with other parts omitted:
-
-```odin title="deletion_queue.odin"
-Allocated_Buffer_Resource :: struct {
-    buffer:     vk.Buffer,
-    allocator:  vma.Allocator,
-    allocation: vma.Allocation,
-}
-
-Resource :: union {
-    Allocated_Buffer_Resource,
-}
-
-deletion_queue_flush :: proc(queue: ^Deletion_Queue) {
-    #reverse for &resource in queue.resources {
-        switch res in resource {
-        case Allocated_Buffer_Resource:
-            vma.destroy_buffer(res.allocator, res.buffer, res.allocation)
-        }
-    }
-}
-```
 
 We can now execute the draw. We will add the new draw command on `engine_draw_geometry()`
 procedure, after the triangle we had.

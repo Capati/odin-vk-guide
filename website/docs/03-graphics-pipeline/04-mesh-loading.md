@@ -560,6 +560,9 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
 
     self.depth_image.image_format = .D32_SFLOAT
     self.depth_image.image_extent = draw_image_extent
+    self.depth_image.allocator = self.vma_allocator
+    self.depth_image.device = self.vk_device
+
     depth_image_usages := vk.ImageUsageFlags{.DEPTH_STENCIL_ATTACHMENT}
 
     dimg_info := image_create_info(
@@ -579,6 +582,9 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
             nil,
         ),
     ) or_return
+    defer if !ok {
+        vma.destroy_image(self.vma_allocator, self.depth_image.image, nil)
+    }
 
     // Build a image-view for the draw image to use for rendering
     dview_info := imageview_create_info(
@@ -588,14 +594,14 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
     )
 
     vk_check(
-        vk.CreateImageView(self.vk_device, &dview_info, nil, &self.draw_image.image_view),
+        vk.CreateImageView(self.vk_device, &dview_info, nil, &self.depth_image.image_view),
     ) or_return
+    defer if !ok {
+        vk.DestroyImageView(self.vk_device, self.depth_image.image_view, nil)
+    }
 
-    deletion_queue_push(self.main_deletion_queue, self.depth_image.image_view)
-    deletion_queue_push(
-        self.main_deletion_queue,
-        Image_Resource{self.depth_image.image, self.vma_allocator, self.depth_image.allocation},
-    )
+    // Add to deletion queues
+    deletion_queue_push(&self.main_deletion_queue, &self.depth_image)
 
     return true
 }
@@ -710,12 +716,12 @@ of the mesh array in the cleanup procedure, before the main deletion queue flush
 
 ```odin
 for &mesh in self.test_meshes {
-    destroy_buffer(self, mesh.mesh_buffers.index_buffer)
-    destroy_buffer(self, mesh.mesh_buffers.vertex_buffer)
+    destroy_buffer(&mesh.mesh_buffers.index_buffer)
+    destroy_buffer(&mesh.mesh_buffers.vertex_buffer)
 }
 destroy_mesh_assets(&self.test_meshes)
 
-deletion_queue_destroy(self.main_deletion_queue)
+deletion_queue_destroy(&self.main_deletion_queue)
 ```
 
 Before continuing, remove the code with the rectangle mesh and the triangle in the background.

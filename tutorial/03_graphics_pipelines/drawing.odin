@@ -29,7 +29,10 @@ engine_draw :: proc(self: ^Engine) -> (ok: bool) {
 	frame := engine_get_current_frame(self)
 
 	// Wait until the gpu has finished rendering the last frame. Timeout of 1 second
-	vk_check(vk.WaitForFences(self.vk_device, 1, &frame.render_fence, true, max(u64))) or_return
+	vk_check(vk.WaitForFences(self.vk_device, 1, &frame.render_fence, true, 1e9)) or_return
+
+	deletion_queue_flush(&frame.deletion_queue)
+
 	vk_check(vk.ResetFences(self.vk_device, 1, &frame.render_fence)) or_return
 
 	// Request image from the swapchain

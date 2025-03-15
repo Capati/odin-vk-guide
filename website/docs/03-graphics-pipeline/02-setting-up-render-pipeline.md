@@ -569,7 +569,7 @@ engine_init_triangle_pipeline :: proc(self: ^Engine) -> (ok: bool) {
             &self.triangle_pipeline_layout,
         ),
     ) or_return
-    deletion_queue_push(self.main_deletion_queue, self.triangle_pipeline_layout)
+    deletion_queue_push(&self.main_deletion_queue, self.triangle_pipeline_layout)
 
     return true
 }
@@ -610,7 +610,7 @@ engine_init_triangle_pipeline :: proc(self: ^Engine) -> (ok: bool) {
 
     // Finally build the pipeline
     self.triangle_pipeline = pipeline_builder_build(&builder, self.vk_device) or_return
-    deletion_queue_push(self.main_deletion_queue, self.triangle_pipeline)
+    deletion_queue_push(&self.main_deletion_queue, self.triangle_pipeline)
 
     return true
 }

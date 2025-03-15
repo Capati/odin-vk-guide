@@ -100,9 +100,9 @@ engine_init_imgui :: proc(self: ^Engine) -> (ok: bool) {
     defer if !ok {im_vk.shutdown()}
 
     // Remember the LIFO queue, make sure the order of push is correct
-    deletion_queue_push(self.main_deletion_queue, imgui_pool)
-    deletion_queue_push(self.main_deletion_queue, im_vk.shutdown)
-    deletion_queue_push(self.main_deletion_queue, im_glfw.shutdown)
+    deletion_queue_push(&self.main_deletion_queue, imgui_pool)
+    deletion_queue_push(&self.main_deletion_queue, im_vk.shutdown)
+    deletion_queue_push(&self.main_deletion_queue, im_glfw.shutdown)
 
     return true
 }

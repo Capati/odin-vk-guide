@@ -86,17 +86,17 @@ engine_cleanup :: proc(self: ^Engine) {
 		vk.DestroySemaphore(self.vk_device, frame.swapchain_semaphore, nil)
 
 		// Flush and destroy the peer frame deletion queue
-		deletion_queue_destroy(frame.deletion_queue)
+		deletion_queue_destroy(&frame.deletion_queue)
 	}
 
 	for &mesh in self.test_meshes {
-		destroy_buffer(self, mesh.mesh_buffers.index_buffer)
-		destroy_buffer(self, mesh.mesh_buffers.vertex_buffer)
+		destroy_buffer(&mesh.mesh_buffers.index_buffer)
+		destroy_buffer(&mesh.mesh_buffers.vertex_buffer)
 	}
 	destroy_mesh_assets(&self.test_meshes)
 
 	// Flush and destroy the global deletion queue
-	deletion_queue_destroy(self.main_deletion_queue)
+	deletion_queue_destroy(&self.main_deletion_queue)
 
 	im.destroy_context()
 
@@ -210,8 +210,8 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 	self.graphics_queue = vkb.device_get_queue(self.vkb.device, .Graphics) or_return
 	self.graphics_queue_family = vkb.device_get_queue_index(self.vkb.device, .Graphics) or_return
 
-	// Create global deletion queue
-	self.main_deletion_queue = create_deletion_queue(self.vk_device)
+	// Initialize global deletion queue
+	deletion_queue_init(&self.main_deletion_queue, self.vk_device)
 
 	// Create the VMA (Vulkan Memory Allocator)
 	// Initializes a subset of Vulkan functions required by VMA
@@ -305,6 +305,8 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
 	// Hardcoding the draw format to 32 bit float
 	self.draw_image.image_format = .R16G16B16A16_SFLOAT
 	self.draw_image.image_extent = draw_image_extent
+	self.draw_image.allocator = self.vma_allocator
+	self.draw_image.device = self.vk_device
 
 	draw_image_usages := vk.ImageUsageFlags {
 		.TRANSFER_SRC,
@@ -336,10 +338,9 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
 			nil,
 		),
 	) or_return
-	deletion_queue_push(
-		self.main_deletion_queue,
-		Image_Resource{self.draw_image.image, self.vma_allocator, self.draw_image.allocation},
-	)
+	defer if !ok {
+		vma.destroy_image(self.vma_allocator, self.draw_image.image, nil)
+	}
 
 	// Build a image-view for the draw image to use for rendering
 	rview_info := imageview_create_info(
@@ -351,10 +352,18 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
 	vk_check(
 		vk.CreateImageView(self.vk_device, &rview_info, nil, &self.draw_image.image_view),
 	) or_return
-	deletion_queue_push(self.main_deletion_queue, self.draw_image.image_view)
+	defer if !ok {
+		vk.DestroyImageView(self.vk_device, self.draw_image.image_view, nil)
+	}
+
+	// Add to deletion queues
+	deletion_queue_push(&self.main_deletion_queue, &self.draw_image)
 
 	self.depth_image.image_format = .D32_SFLOAT
 	self.depth_image.image_extent = draw_image_extent
+	self.depth_image.allocator = self.vma_allocator
+	self.depth_image.device = self.vk_device
+
 	depth_image_usages := vk.ImageUsageFlags{.DEPTH_STENCIL_ATTACHMENT}
 
 	dimg_info := image_create_info(
@@ -374,10 +383,9 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
 			nil,
 		),
 	) or_return
-	deletion_queue_push(
-		self.main_deletion_queue,
-		Image_Resource{self.depth_image.image, self.vma_allocator, self.depth_image.allocation},
-	)
+	defer if !ok {
+		vma.destroy_image(self.vma_allocator, self.depth_image.image, nil)
+	}
 
 	// Build a image-view for the draw image to use for rendering
 	dview_info := imageview_create_info(
@@ -389,7 +397,12 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
 	vk_check(
 		vk.CreateImageView(self.vk_device, &dview_info, nil, &self.depth_image.image_view),
 	) or_return
-	deletion_queue_push(self.main_deletion_queue, self.depth_image.image_view)
+	defer if !ok {
+		vk.DestroyImageView(self.vk_device, self.depth_image.image_view, nil)
+	}
+
+	// Add to deletion queues
+	deletion_queue_push(&self.main_deletion_queue, &self.depth_image)
 
 	return true
 }
@@ -404,7 +417,7 @@ engine_init_commands :: proc(self: ^Engine) -> (ok: bool) {
 
 	for &frame in self.frames {
 		// Create peer frame deletion queue
-		frame.deletion_queue = create_deletion_queue(self.vk_device)
+		deletion_queue_init(&frame.deletion_queue, self.vk_device)
 
 		// Create the command pool
 		vk_check(
@@ -429,7 +442,7 @@ engine_init_commands :: proc(self: ^Engine) -> (ok: bool) {
 		vk.AllocateCommandBuffers(self.vk_device, &cmd_alloc_info, &self.imm_command_buffer),
 	) or_return
 
-	deletion_queue_push(self.main_deletion_queue, self.imm_command_pool)
+	deletion_queue_push(&self.main_deletion_queue, self.imm_command_pool)
 
 	return true
 }
@@ -467,7 +480,7 @@ engine_init_sync_structures :: proc(self: ^Engine) -> (ok: bool) {
 
 	vk_check(vk.CreateFence(self.vk_device, &fence_create_info, nil, &self.imm_fence)) or_return
 
-	deletion_queue_push(self.main_deletion_queue, self.imm_fence)
+	deletion_queue_push(&self.main_deletion_queue, self.imm_fence)
 
 	return true
 }
@@ -525,8 +538,8 @@ engine_init_descriptors :: proc(self: ^Engine) -> (ok: bool) {
 
 	vk.UpdateDescriptorSets(self.vk_device, 1, &draw_image_write, 0, nil)
 
-	deletion_queue_push(self.main_deletion_queue, self.global_descriptor_allocator.pool)
-	deletion_queue_push(self.main_deletion_queue, self.draw_image_descriptor_layout)
+	deletion_queue_push(&self.main_deletion_queue, self.global_descriptor_allocator.pool)
+	deletion_queue_push(&self.main_deletion_queue, self.draw_image_descriptor_layout)
 
 	return true
 }
@@ -621,9 +634,9 @@ engine_init_background_pipeline :: proc(self: ^Engine) -> (ok: bool) {
 	self.background_effects[.Gradient] = gradient_color
 	self.background_effects[.Sky] = sky
 
-	deletion_queue_push(self.main_deletion_queue, self.gradient_pipeline_layout)
-	deletion_queue_push(self.main_deletion_queue, gradient_color.pipeline)
-	deletion_queue_push(self.main_deletion_queue, sky.pipeline)
+	deletion_queue_push(&self.main_deletion_queue, self.gradient_pipeline_layout)
+	deletion_queue_push(&self.main_deletion_queue, gradient_color.pipeline)
+	deletion_queue_push(&self.main_deletion_queue, sky.pipeline)
 
 	return true
 }
@@ -659,7 +672,7 @@ engine_init_mesh_pipeline :: proc(self: ^Engine) -> (ok: bool) {
 			&self.mesh_pipeline_layout,
 		),
 	) or_return
-	deletion_queue_push(self.main_deletion_queue, self.mesh_pipeline_layout)
+	deletion_queue_push(&self.main_deletion_queue, self.mesh_pipeline_layout)
 
 	builder := pipeline_builder_create_default()
 
@@ -688,7 +701,7 @@ engine_init_mesh_pipeline :: proc(self: ^Engine) -> (ok: bool) {
 
 	// Finally build the pipeline
 	self.mesh_pipeline = pipeline_builder_build(&builder, self.vk_device) or_return
-	deletion_queue_push(self.main_deletion_queue, self.mesh_pipeline)
+	deletion_queue_push(&self.main_deletion_queue, self.mesh_pipeline)
 
 	return true
 }
@@ -773,9 +786,9 @@ engine_init_imgui :: proc(self: ^Engine) -> (ok: bool) {
 	im_vk.init(&init_info) or_return
 	defer if !ok {im_vk.shutdown()}
 
-	deletion_queue_push(self.main_deletion_queue, imgui_pool)
-	deletion_queue_push(self.main_deletion_queue, im_vk.shutdown)
-	deletion_queue_push(self.main_deletion_queue, im_glfw.shutdown)
+	deletion_queue_push(&self.main_deletion_queue, imgui_pool)
+	deletion_queue_push(&self.main_deletion_queue, im_vk.shutdown)
+	deletion_queue_push(&self.main_deletion_queue, im_glfw.shutdown)
 
 	return true
 }

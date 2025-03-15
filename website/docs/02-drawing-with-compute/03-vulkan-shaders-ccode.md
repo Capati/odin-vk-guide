@@ -473,8 +473,8 @@ engine_init_descriptors :: proc(self: ^Engine) -> (ok: bool) {
 
     vk.UpdateDescriptorSets(self.vk_device, 1, &draw_image_write, 0, nil)
 
-    deletion_queue_push(self.main_deletion_queue, self.global_descriptor_allocator.pool)
-    deletion_queue_push(self.main_deletion_queue, self.draw_image_descriptor_layout)
+    deletion_queue_push(&self.main_deletion_queue, self.global_descriptor_allocator.pool)
+    deletion_queue_push(&self.main_deletion_queue, self.draw_image_descriptor_layout)
 
     return true
 }
@@ -681,8 +681,8 @@ deleted at the end of the program through the deletion queue.
 engine_init_background_pipelines :: proc(self: ^Engine) -> (ok: bool) {
     // Other code ---
 
-    deletion_queue_push(self.main_deletion_queue, self.gradient_pipeline_layout)
-    deletion_queue_push(self.main_deletion_queue, self.gradient_pipeline)
+    deletion_queue_push(&self.main_deletion_queue, self.gradient_pipeline_layout)
+    deletion_queue_push(&self.main_deletion_queue, self.gradient_pipeline)
 
     return true
 }

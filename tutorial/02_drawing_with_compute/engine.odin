@@ -27,7 +27,7 @@ Frame_Data :: struct {
 	render_semaphore:      vk.Semaphore,
 	swapchain_image_index: u32,
 	render_fence:          vk.Fence,
-	deletion_queue:        ^Deletion_Queue,
+	deletion_queue:        Deletion_Queue,
 }
 
 FRAME_OVERLAP :: 2
@@ -83,7 +83,7 @@ Engine :: struct {
 
 	// Memory management
 	vma_allocator:                vma.Allocator,
-	main_deletion_queue:          ^Deletion_Queue,
+	main_deletion_queue:          Deletion_Queue,
 
 	// Descriptor management
 	global_descriptor_allocator:  Descriptor_Allocator,
@@ -178,11 +178,11 @@ engine_cleanup :: proc(self: ^Engine) {
 		vk.DestroySemaphore(self.vk_device, frame.swapchain_semaphore, nil)
 
 		// Flush and destroy the peer frame deletion queue
-		deletion_queue_destroy(frame.deletion_queue)
+		deletion_queue_destroy(&frame.deletion_queue)
 	}
 
 	// Flush and destroy the global deletion queue
-	deletion_queue_destroy(self.main_deletion_queue)
+	deletion_queue_destroy(&self.main_deletion_queue)
 
 	im.destroy_context()
 
@@ -294,8 +294,8 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 	self.graphics_queue = vkb.device_get_queue(self.vkb.device, .Graphics) or_return
 	self.graphics_queue_family = vkb.device_get_queue_index(self.vkb.device, .Graphics) or_return
 
-	// Create global deletion queue
-	self.main_deletion_queue = create_deletion_queue(self.vk_device)
+	// Initialize global deletion queue
+	deletion_queue_init(&self.main_deletion_queue, self.vk_device)
 
 	// Create the VMA (Vulkan Memory Allocator)
 	// Initializes a subset of Vulkan functions required by VMA
@@ -314,7 +314,7 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 		"Failed to Create Vulkan Memory Allocator",
 	) or_return
 
-	deletion_queue_push(self.main_deletion_queue, self.vma_allocator)
+	deletion_queue_push(&self.main_deletion_queue, self.vma_allocator)
 
 	return true
 }
@@ -365,6 +365,8 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
 	// Hardcoding the draw format to 32 bit float
 	self.draw_image.image_format = .R16G16B16A16_SFLOAT
 	self.draw_image.image_extent = draw_image_extent
+	self.draw_image.allocator = self.vma_allocator
+	self.draw_image.device = self.vk_device
 
 	draw_image_usages := vk.ImageUsageFlags {
 		.TRANSFER_SRC,
@@ -396,6 +398,9 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
 			nil,
 		),
 	) or_return
+	defer if !ok {
+		vma.destroy_image(self.vma_allocator, self.draw_image.image, nil)
+	}
 
 	// Build a image-view for the draw image to use for rendering
 	rview_info := imageview_create_info(
@@ -407,13 +412,12 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
 	vk_check(
 		vk.CreateImageView(self.vk_device, &rview_info, nil, &self.draw_image.image_view),
 	) or_return
+	defer if !ok {
+		vk.DestroyImageView(self.vk_device, self.draw_image.image_view, nil)
+	}
 
 	// Add to deletion queues
-	deletion_queue_push(self.main_deletion_queue, self.draw_image.image_view)
-	deletion_queue_push(
-		self.main_deletion_queue,
-		Image_Resource{self.draw_image.image, self.vma_allocator, self.draw_image.allocation},
-	)
+	deletion_queue_push(&self.main_deletion_queue, &self.draw_image)
 
 	return true
 }
@@ -428,7 +432,7 @@ engine_init_commands :: proc(self: ^Engine) -> (ok: bool) {
 
 	for &frame in self.frames {
 		// Create peer frame deletion queue
-		frame.deletion_queue = create_deletion_queue(self.vk_device)
+		deletion_queue_init(&frame.deletion_queue, self.vk_device)
 
 		// Create the command pool
 		vk_check(
@@ -453,7 +457,7 @@ engine_init_commands :: proc(self: ^Engine) -> (ok: bool) {
 	// 	vk.AllocateCommandBuffers(self.vk_device, &cmd_alloc_info, &self.im_command_buffer),
 	// ) or_return
 
-	// deletion_queue_push(self.main_deletion_queue, self.im_command_pool)
+	// deletion_queue_push(&self.main_deletion_queue, self.im_command_pool)
 
 	return true
 }
@@ -491,7 +495,7 @@ engine_init_sync_structures :: proc(self: ^Engine) -> (ok: bool) {
 
 	// vk_check(vk.CreateFence(self.vk_device, &fence_create_info, nil, &self.im_fence)) or_return
 
-	// deletion_queue_push(self.main_deletion_queue, self.im_fence)
+	// deletion_queue_push(&self.main_deletion_queue, self.im_fence)
 
 	return true
 }
@@ -545,8 +549,8 @@ engine_init_descriptors :: proc(self: ^Engine) -> (ok: bool) {
 
 	vk.UpdateDescriptorSets(self.vk_device, 1, &draw_image_write, 0, nil)
 
-	deletion_queue_push(self.main_deletion_queue, self.global_descriptor_allocator.pool)
-	deletion_queue_push(self.main_deletion_queue, self.draw_image_descriptor_layout)
+	deletion_queue_push(&self.main_deletion_queue, self.global_descriptor_allocator.pool)
+	deletion_queue_push(&self.main_deletion_queue, self.draw_image_descriptor_layout)
 
 	return true
 }
@@ -641,9 +645,9 @@ engine_init_background_pipelines :: proc(self: ^Engine) -> (ok: bool) {
 	self.background_effects[.Gradient] = gradient_color
 	self.background_effects[.Sky] = sky
 
-	deletion_queue_push(self.main_deletion_queue, self.gradient_pipeline_layout)
-	deletion_queue_push(self.main_deletion_queue, gradient_color.pipeline)
-	deletion_queue_push(self.main_deletion_queue, sky.pipeline)
+	deletion_queue_push(&self.main_deletion_queue, self.gradient_pipeline_layout)
+	deletion_queue_push(&self.main_deletion_queue, gradient_color.pipeline)
+	deletion_queue_push(&self.main_deletion_queue, sky.pipeline)
 
 	return true
 }
@@ -751,9 +755,9 @@ engine_init_imgui :: proc(self: ^Engine) -> (ok: bool) {
 	defer if !ok {im_vk.shutdown()}
 
 	// Remember the LIFO queue, make sure the order of push is correct
-	deletion_queue_push(self.main_deletion_queue, imgui_pool)
-	deletion_queue_push(self.main_deletion_queue, im_vk.shutdown)
-	deletion_queue_push(self.main_deletion_queue, im_glfw.shutdown)
+	deletion_queue_push(&self.main_deletion_queue, imgui_pool)
+	deletion_queue_push(&self.main_deletion_queue, im_vk.shutdown)
+	deletion_queue_push(&self.main_deletion_queue, im_glfw.shutdown)
 
 	return true
 }
@@ -879,7 +883,7 @@ engine_draw :: proc(self: ^Engine) -> (ok: bool) {
 	// Wait until the gpu has finished rendering the last frame. Timeout of 1 second
 	vk_check(vk.WaitForFences(self.vk_device, 1, &frame.render_fence, true, 1e9)) or_return
 
-	deletion_queue_flush(frame.deletion_queue)
+	deletion_queue_flush(&frame.deletion_queue)
 
 	vk_check(vk.ResetFences(self.vk_device, 1, &frame.render_fence)) or_return
 

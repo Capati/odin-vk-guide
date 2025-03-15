@@ -27,11 +27,18 @@ vk_check :: #force_inline proc(
 }
 
 Allocated_Image :: struct {
+	device:       vk.Device,
 	image:        vk.Image,
 	image_view:   vk.ImageView,
-	allocation:   vma.Allocation,
 	image_extent: vk.Extent3D,
 	image_format: vk.Format,
+	allocator:    vma.Allocator,
+	allocation:   vma.Allocation,
+}
+
+destroy_image :: proc(self: ^Allocated_Image) {
+	vk.DestroyImageView(self.device, self.image_view, nil)
+	vma.destroy_image(self.allocator, self.image, self.allocation)
 }
 
 engine_immediate_submit :: proc(
@@ -68,8 +75,9 @@ engine_immediate_submit :: proc(
 
 Allocated_Buffer :: struct {
 	buffer:     vk.Buffer,
-	allocation: vma.Allocation,
 	info:       vma.Allocation_Info,
+	allocator:  vma.Allocator,
+	allocation: vma.Allocation,
 }
 
 create_buffer :: proc(
@@ -93,6 +101,8 @@ create_buffer :: proc(
 		flags = {.Mapped},
 	}
 
+	new_buffer.allocator = self.vma_allocator
+
 	// allocate the buffer
 	vk_check(
 		vma.create_buffer(
@@ -108,8 +118,8 @@ create_buffer :: proc(
 	return new_buffer, true
 }
 
-destroy_buffer :: proc(self: ^Engine, buffer: Allocated_Buffer) {
-	vma.destroy_buffer(self.vma_allocator, buffer.buffer, buffer.allocation)
+destroy_buffer :: proc(self: ^Allocated_Buffer) {
+	vma.destroy_buffer(self.allocator, self.buffer, self.allocation)
 }
 
 Vertex :: struct {
@@ -152,7 +162,7 @@ upload_mesh :: proc(
 		.Gpu_Only,
 	) or_return
 	defer if !ok {
-		destroy_buffer(self, new_surface.vertex_buffer)
+		destroy_buffer(&new_surface.vertex_buffer)
 	}
 
 	// Find the address of the vertex buffer
@@ -173,7 +183,7 @@ upload_mesh :: proc(
 		.Gpu_Only,
 	) or_return
 	defer if !ok {
-		destroy_buffer(self, new_surface.index_buffer)
+		destroy_buffer(&new_surface.index_buffer)
 	}
 
 	staging := create_buffer(
@@ -182,7 +192,7 @@ upload_mesh :: proc(
 		{.TRANSFER_SRC},
 		.Cpu_Only,
 	) or_return
-	defer destroy_buffer(self, staging)
+	defer destroy_buffer(&staging)
 
 	data := staging.info.mapped_data
 	// Copy vertex buffer

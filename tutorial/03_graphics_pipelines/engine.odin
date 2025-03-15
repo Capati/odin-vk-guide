@@ -21,7 +21,7 @@ Frame_Data :: struct {
 	render_semaphore:      vk.Semaphore,
 	swapchain_image_index: u32,
 	render_fence:          vk.Fence,
-	deletion_queue:        ^Deletion_Queue,
+	deletion_queue:        Deletion_Queue,
 }
 
 FRAME_OVERLAP :: 2
@@ -77,7 +77,7 @@ Engine :: struct {
 
 	// Memory management
 	vma_allocator:                vma.Allocator,
-	main_deletion_queue:          ^Deletion_Queue,
+	main_deletion_queue:          Deletion_Queue,
 
 	// Descriptor management
 	global_descriptor_allocator:  Descriptor_Allocator,

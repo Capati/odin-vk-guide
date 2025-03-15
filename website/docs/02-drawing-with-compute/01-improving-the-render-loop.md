@@ -1,16 +1,16 @@
 ---
 sidebar_position: 1
-sidebar_label: "Improving the render loop"
+sidebar_label: "Improving The Render Loop"
 ---
 
-# Improving the render loop
+# Improving The Render Loop
 
 Before we begin drawing, we need to implement a couple other things. First we have a deletion
 queue that will allow us to safely handle the cleanup of a growing amount of objects, and then
 we will change the render loop to draw into a non-swapchain image and then copy it to the
 swapchain.
 
-## Deletion queue
+## Deletion Queue
 
 As we begin to add more and more vulkan structures, we need a way to handle their destruction.
 We could keep adding more things into the `engine_cleanup()` procedure, but that would not
@@ -30,7 +30,6 @@ This is the entire implementation.
 package vk_guide
 
 // Core
-import "base:runtime"
 import "core:mem"
 
 // Vendor
@@ -39,31 +38,37 @@ import vk "vendor:vulkan"
 // Libraries
 import "libs:vma"
 
-Image_Resource :: struct {
-    image:      vk.Image,
-    allocator:  vma.Allocator,
-    allocation: vma.Allocation,
-}
-
 Deletion_ProcC :: #type proc "c" ()
 
 Resource :: union {
-    vk.Buffer,
-    vk.Semaphore,
-    vk.Fence,
-    Image_Resource,
-    vk.ImageView,
-    vk.DeviceMemory,
-    vk.Sampler,
+    // Cleanup procedures
+    Deletion_ProcC,
+
+    // Pipeline objects
     vk.Pipeline,
     vk.PipelineLayout,
-    vk.DescriptorSetLayout,
+
+    // Descriptor-related objects
     vk.DescriptorPool,
-    vk.Framebuffer,
-    vk.RenderPass,
+    vk.DescriptorSetLayout,
+
+    // Resource views and samplers
+    vk.ImageView,
+    vk.Sampler,
+
+    // Command-related objects
     vk.CommandPool,
+
+    // Synchronization primitives
+    vk.Fence,
+    vk.Semaphore,
+
+    // Core memory resources
+    vk.Buffer,
+    vk.DeviceMemory,
+
+    // Memory allocator
     vma.Allocator,
-    Deletion_ProcC,
 }
 
 Deletion_Queue :: struct {
@@ -72,108 +77,113 @@ Deletion_Queue :: struct {
     allocator: mem.Allocator,
 }
 
-create_deletion_queue :: proc(device: vk.Device) -> (queue: ^Deletion_Queue) {
+deletion_queue_init :: proc(
+    self: ^Deletion_Queue,
+    device: vk.Device,
+    allocator := context.allocator,
+) {
+    assert(self != nil, "Invalid 'Deletion_Queue'")
     assert(device != nil, "Invalid 'Device'")
 
-    default_allocator := runtime.default_allocator()
-
-    queue = new_clone(
-        Deletion_Queue{device = device, allocator = default_allocator},
-        default_allocator,
-    )
-    ensure(queue != nil, "Failed to allocate 'Deletion_Queue'")
-
-    // Initialize dynamic array
-    queue.resources = make([dynamic]Resource, default_allocator)
-
-    return
+    self.allocator = allocator
+    self.device = device
+    self.resources = make([dynamic]Resource, self.allocator)
 }
 
-deletion_queue_destroy :: proc(queue: ^Deletion_Queue) {
-    assert(queue != nil)
+deletion_queue_destroy :: proc(self: ^Deletion_Queue) {
+    assert(self != nil)
 
-    context.allocator = queue.allocator
+    context.allocator = self.allocator
 
     // Flush any remaining resources
-    deletion_queue_flush(queue)
+    deletion_queue_flush(self)
 
     // Free dynamic array
-    delete(queue.resources)
-
-    free(queue)
+    delete(self.resources)
 }
 
-deletion_queue_push :: proc(queue: ^Deletion_Queue, resource: Resource) {
-    append(&queue.resources, resource)
+deletion_queue_push :: proc(self: ^Deletion_Queue, resource: Resource) {
+    append(&self.resources, resource)
 }
 
-// LIFO (Last-In, First-Out) deletion
-deletion_queue_flush :: proc(queue: ^Deletion_Queue) {
-    assert(queue != nil)
+// LIFO (Last-In, First-Out) deletion.
+deletion_queue_flush :: proc(self: ^Deletion_Queue) {
+    assert(self != nil)
 
-    if len(queue.resources) == 0 {
+    if len(self.resources) == 0 {
         return
     }
 
     // Process resources in reverse order (LIFO)
-    #reverse for &resource in queue.resources {
-        switch res in resource {
+    #reverse for &resource in self.resources {
+        switch &res in resource {
+        // Cleanup procedures
         case Deletion_ProcC:
             res()
-        case vk.CommandPool:
-            vk.DestroyCommandPool(queue.device, res, nil)
-        case vk.Framebuffer:
-            vk.DestroyFramebuffer(queue.device, res, nil)
+
+        // Pipeline objects
         case vk.Pipeline:
-            vk.DestroyPipeline(queue.device, res, nil)
+            vk.DestroyPipeline(self.device, res, nil)
         case vk.PipelineLayout:
-            vk.DestroyPipelineLayout(queue.device, res, nil)
+            vk.DestroyPipelineLayout(self.device, res, nil)
+
+        // Descriptor-related objects
         case vk.DescriptorPool:
-            vk.DestroyDescriptorPool(queue.device, res, nil)
+            vk.DestroyDescriptorPool(self.device, res, nil)
         case vk.DescriptorSetLayout:
-            vk.DestroyDescriptorSetLayout(queue.device, res, nil)
-        case vk.RenderPass:
-            vk.DestroyRenderPass(queue.device, res, nil)
+            vk.DestroyDescriptorSetLayout(self.device, res, nil)
+
+        // Resource views and samplers
         case vk.ImageView:
-            vk.DestroyImageView(queue.device, res, nil)
+            vk.DestroyImageView(self.device, res, nil)
         case vk.Sampler:
-            vk.DestroySampler(queue.device, res, nil)
-        case Image_Resource:
-            vma.destroy_image(res.allocator, res.image, res.allocation)
+            vk.DestroySampler(self.device, res, nil)
+
+        // Command-related objects
+        case vk.CommandPool:
+            vk.DestroyCommandPool(self.device, res, nil)
+
+        // Synchronization primitives
         case vk.Fence:
-            vk.DestroyFence(queue.device, res, nil)
+            vk.DestroyFence(self.device, res, nil)
         case vk.Semaphore:
-            vk.DestroySemaphore(queue.device, res, nil)
+            vk.DestroySemaphore(self.device, res, nil)
+
+        // Core memory resources
         case vk.Buffer:
-            vk.DestroyBuffer(queue.device, res, nil)
+            vk.DestroyBuffer(self.device, res, nil)
         case vk.DeviceMemory:
-            vk.FreeMemory(queue.device, res, nil)
+            vk.FreeMemory(self.device, res, nil)
+
+        // Memory allocator
         case vma.Allocator:
             vma.destroy_allocator(res)
         }
     }
 
     // Clear the array after processing all resources
-    clear(&queue.resources)
-}
+    clear(&self.resources)
+
 ```
 
 The code defines a `Deletion_Queue` struct that tracks Vulkan resources that need to be
 destroyed. The `Resource` union type can hold any Vulkan object type (buffers, images,
-pipelines, etc.) or a function callback.
+pipelines, etc.) or a procedure callback. We will add more resources as needed.
 
 Key procedures:
 
-- `create_deletion_queue`: Creates a new queue with references to the Vulkan device and memory
-  allocator
-- `deletion_queue_push`: Adds resources to the queue for later cleanup
-- `deletion_queue_flush`: Destroys all queued resources in reverse order (LIFO)
-- `deletion_queue_destroy`: Flushes remaining resources and frees the queue itself
+- `deletion_queue_init` - Initializes a new deletion queue with references to the Vulkan device
+- `deletion_queue_push` - Adds resources to the queue for later cleanup
+- `deletion_queue_flush` - Destroys all queued resources in reverse order (LIFO)
+- `deletion_queue_destroy` - Flushes remaining resources and frees the queue itself
+
+:::tip[LIFO (Last-In, First-Out)]
 
 The **LIFO** approach is important because Vulkan resources often have dependencies (e.g., a
 pipeline depends on a pipeline layout), so destroying them in reverse creation order ensures
-dependencies are respected. The implementation uses a switch statement to call the appropriate
-Vulkan destroy function based on the resource type.
+dependencies are respected.
+
+:::
 
 We will have the deletion queue in multiple places, for multiple lifetimes of objects. One of
 them is on the `Engine` itself, and will be flushed when the engine gets destroyed. Global
@@ -185,24 +195,24 @@ Add it into `Engine` struct, and inside the `Frame_Data` struct.
 ```odin
 Frame_Data :: struct {
      // Other data ---
-    deletion_queue: ^Deletion_Queue,
+    deletion_queue: Deletion_Queue,
 }
 
 Engine :: struct {
      // Other data ---
-    main_deletion_queue: ^Deletion_Queue,
+    main_deletion_queue: Deletion_Queue,
 }
 ```
 
-before we can use the deletion queue, we need to initialize then by calling
-`create_deletion_queue` from `engine_init_vulkan` and `engine_init_commands`.
+Before we can use the deletion queue, we need to initialize then by calling
+`deletion_queue_init` from `engine_init_vulkan` and `engine_init_commands`.
 
 ```odin
 engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
     // Other code ---
 
-    // Create global deletion queue
-    self.main_deletion_queue = create_deletion_queue(self.vk_device)
+    // Initialize global deletion queue
+    deletion_queue_init(&self.main_deletion_queue, self.vk_device)
 
     return true
 }
@@ -214,7 +224,7 @@ engine_init_commands :: proc(self: ^Engine) -> (ok: bool) {
 
     for &frame in self.frames {
         // Create peer frame deletion queue
-        frame.deletion_queue = create_deletion_queue(self.vk_device)
+        deletion_queue_init(&frame.deletion_queue, self.vk_device)
 
         // Other code ---
     }
@@ -236,7 +246,7 @@ engine_draw :: proc(self: ^Engine) -> (ok: bool) {
     // Wait until the gpu has finished rendering the last frame. Timeout of 1 second
     vk_check(vk.WaitForFences(self.vk_device, 1, &frame.render_fence, true, 1e9)) or_return
 
-    deletion_queue_flush(frame.deletion_queue)
+    deletion_queue_flush(&frame.deletion_queue)
 
     // Other code ---
 }
@@ -260,11 +270,11 @@ engine_cleanup :: proc(self: ^Engine) {
         vk.DestroySemaphore(self.vk_device, frame.swapchain_semaphore, nil)
 
         // Flush and destroy the peer frame deletion queue
-        deletion_queue_destroy(frame.deletion_queue)
+        deletion_queue_destroy(&frame.deletion_queue)
     }
 
     // Flush and destroy the global deletion queue
-    deletion_queue_destroy(self.main_deletion_queue)
+    deletion_queue_destroy(&self.main_deletion_queue)
 
     // Rest of cleanup procedure
 }
@@ -318,7 +328,6 @@ Now we will initialize it from `engine_init_vulkan()` call, at the end of the pr
 engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
     // Other code ---
 
-    // Create the VMA (Vulkan Memory Allocator)
     // Initializes a subset of Vulkan functions required by VMA
     vma_vulkan_functions := vma.create_vulkan_functions()
 
@@ -335,7 +344,7 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
         "Failed to Create Vulkan Memory Allocator",
     ) or_return
 
-    deletion_queue_push(self.main_deletion_queue, self.vma_allocator)
+    deletion_queue_push(&self.main_deletion_queue, self.vma_allocator)
 
     return true
 }
@@ -356,7 +365,7 @@ pointers using the utility procedure `vma.create_vulkan_functions` and assign th
 
 :::
 
-## New draw loop
+## New Draw Loop
 
 Drawing directly into the swapchain is fine for many projects, and it can even be optimal in
 some cases such as phones. But it comes with a few restrictions. The most important of them is
@@ -394,17 +403,27 @@ Lets begin by adding the new members we will need to the VulkanEngine class.
 On `core.odin`, add this structure which holds the data needed for an image. We will hold a
 `vk.Image` alongside its default `vk.ImageView`, then the allocation for the image memory, and
 last, the image size and its format, which will be useful when dealing with the image. We also
-add a `_drawExtent` that we can use to decide what size to render.
+store the device and VMA allocator for use on cleanup later.
 
 ```odin title="core.odin"
 Allocated_Image :: struct {
+    device:       vk.Device,
     image:        vk.Image,
     image_view:   vk.ImageView,
-    allocation:   vma.Allocation,
     image_extent: vk.Extent3D,
     image_format: vk.Format,
+    allocator:    vma.Allocator,
+    allocation:   vma.Allocation,
+}
+
+destroy_image :: proc(self: ^Allocated_Image) {
+    vk.DestroyImageView(self.device, self.image_view, nil)
+    vma.destroy_image(self.allocator, self.image, self.allocation)
 }
 ```
+
+In the `Engine` structure, add the `draw_image` field to store the image we will render to, and
+the `draw_extent` field to specify the size of the rendered image.
 
 ```odin title="engine.odin"
 Engine :: struct {
@@ -460,9 +479,28 @@ the gpu can do, so the only real use case for LINEAR is CPU readback.
 On the imageview creation, we need to setup the subresource. Thats similar to the one we used
 in the pipeline barrier.
 
+Lets update our deletion queue to handle the `Allocated_Image`:
+
+```odin title="deletion_queue.odin"
+Resource :: union {
+    // Higher-level custom resources
+    ^Allocated_Image,
+}
+
+deletion_queue_flush :: proc(self: ^Deletion_Queue) {
+    #reverse for &resource in self.resources {
+        switch &res in resource {
+        // Higher-level custom resources
+        case ^Allocated_Image:
+            destroy_image(res)
+        }
+    }
+}
+```
+
 Now, at the end of `engine_init_swapchain`, lets create it.
 
-```odin
+```odin title="engine.odin"
 engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
     // Other code ---
 
@@ -476,6 +514,8 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
     // Hardcoding the draw format to 32 bit float
     self.draw_image.image_format = .R16G16B16A16_SFLOAT
     self.draw_image.image_extent = draw_image_extent
+    self.draw_image.allocator = self.vma_allocator
+    self.draw_image.device = self.vk_device
 
     draw_image_usages := vk.ImageUsageFlags {
         .TRANSFER_SRC,
@@ -507,6 +547,9 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
             nil,
         ),
     ) or_return
+    defer if !ok {
+        vma.destroy_image(self.vma_allocator, self.draw_image.image, nil)
+    }
 
     // Build a image-view for the draw image to use for rendering
     rview_info := imageview_create_info(
@@ -518,13 +561,12 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
     vk_check(
         vk.CreateImageView(self.vk_device, &rview_info, nil, &self.draw_image.image_view),
     ) or_return
+    defer if !ok {
+        vk.DestroyImageView(self.vk_device, self.draw_image.image_view, nil)
+    }
 
     // Add to deletion queues
-    deletion_queue_push(self.main_deletion_queue, self.draw_image.image_view)
-    deletion_queue_push(
-        self.main_deletion_queue,
-        Image_Resource{self.draw_image.image, self.vma_allocator, self.draw_image.allocation},
-    )
+    deletion_queue_push(&self.main_deletion_queue, &self.draw_image)
 
     return true
 }
@@ -563,7 +605,7 @@ imageview to access images. This is generally a thin wrapper over the image itse
 you do things like limit access to only 1 mipmap. We will always be pairing vkimages with their
 "default" imageview in this tutorial.
 
-### The New draw loop
+### The New Draw Loop
 
 Now that we have a new draw image, lets add it into the render loop.
 

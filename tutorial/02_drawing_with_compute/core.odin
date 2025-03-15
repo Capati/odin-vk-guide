@@ -26,9 +26,16 @@ vk_check :: #force_inline proc(
 }
 
 Allocated_Image :: struct {
-	image:        vk.Image,
-	image_view:   vk.ImageView,
-	allocation:   vma.Allocation,
-	image_extent: vk.Extent3D,
-	image_format: vk.Format,
+    device:       vk.Device,
+    image:        vk.Image,
+    image_view:   vk.ImageView,
+    image_extent: vk.Extent3D,
+    image_format: vk.Format,
+    allocator:    vma.Allocator,
+    allocation:   vma.Allocation,
+}
+
+destroy_image :: proc(self: ^Allocated_Image) {
+    vk.DestroyImageView(self.device, self.image_view, nil)
+    vma.destroy_image(self.allocator, self.image, self.allocation)
 }

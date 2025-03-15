@@ -270,9 +270,9 @@ vk_check(
 self.background_effects[.Gradient] = gradient_color
 self.background_effects[.Sky] = sky
 
-deletion_queue_push(self.main_deletion_queue, self.gradient_pipeline_layout)
-deletion_queue_push(self.main_deletion_queue, gradient_color.pipeline)
-deletion_queue_push(self.main_deletion_queue, sky.pipeline)
+deletion_queue_push(&self.main_deletion_queue, self.gradient_pipeline_layout)
+deletion_queue_push(&self.main_deletion_queue, gradient_color.pipeline)
+deletion_queue_push(&self.main_deletion_queue, sky.pipeline)
 ```
 
 We have changed the pipelines procedure. We keep the pipeline layout from before, but now we

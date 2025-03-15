@@ -1,7 +1,6 @@
 package vk_guide
 
 // Core
-import "base:runtime"
 import "core:mem"
 
 // Vendor
@@ -10,31 +9,40 @@ import vk "vendor:vulkan"
 // Libraries
 import "libs:vma"
 
-Image_Resource :: struct {
-	image:      vk.Image,
-	allocator:  vma.Allocator,
-	allocation: vma.Allocation,
-}
-
 Deletion_ProcC :: #type proc "c" ()
 
 Resource :: union {
-	vk.Buffer,
-	vk.Semaphore,
-	vk.Fence,
-	Image_Resource,
-	vk.ImageView,
-	vk.DeviceMemory,
-	vk.Sampler,
+	// Higher-level custom resources
+	^Allocated_Image,
+
+	// Cleanup procedures
+	Deletion_ProcC,
+
+	// Pipeline objects
 	vk.Pipeline,
 	vk.PipelineLayout,
-	vk.DescriptorSetLayout,
+
+	// Descriptor-related objects
 	vk.DescriptorPool,
-	vk.Framebuffer,
-	vk.RenderPass,
+	vk.DescriptorSetLayout,
+
+	// Resource views and samplers
+	vk.ImageView,
+	vk.Sampler,
+
+	// Command-related objects
 	vk.CommandPool,
+
+	// Synchronization primitives
+	vk.Fence,
+	vk.Semaphore,
+
+	// Core memory resources
+	vk.Buffer,
+	vk.DeviceMemory,
+
+	// Memory allocator
 	vma.Allocator,
-	Deletion_ProcC,
 }
 
 Deletion_Queue :: struct {
@@ -43,87 +51,94 @@ Deletion_Queue :: struct {
 	allocator: mem.Allocator,
 }
 
-create_deletion_queue :: proc(device: vk.Device) -> (queue: ^Deletion_Queue) {
+deletion_queue_init :: proc(
+	self: ^Deletion_Queue,
+	device: vk.Device,
+	allocator := context.allocator,
+) {
+	assert(self != nil, "Invalid 'Deletion_Queue'")
 	assert(device != nil, "Invalid 'Device'")
 
-	default_allocator := runtime.default_allocator()
-
-	queue = new_clone(
-		Deletion_Queue{device = device, allocator = default_allocator},
-		default_allocator,
-	)
-	ensure(queue != nil, "Failed to allocate 'Deletion_Queue'")
-
-	// Initialize dynamic array
-	queue.resources = make([dynamic]Resource, default_allocator)
-
-	return
+	self.allocator = allocator
+	self.device = device
+	self.resources = make([dynamic]Resource, self.allocator)
 }
 
-deletion_queue_destroy :: proc(queue: ^Deletion_Queue) {
-	assert(queue != nil)
+deletion_queue_destroy :: proc(self: ^Deletion_Queue) {
+	assert(self != nil)
 
-	context.allocator = queue.allocator
+	context.allocator = self.allocator
 
 	// Flush any remaining resources
-	deletion_queue_flush(queue)
+	deletion_queue_flush(self)
 
 	// Free dynamic array
-	delete(queue.resources)
-
-	free(queue)
+	delete(self.resources)
 }
 
-deletion_queue_push :: proc(queue: ^Deletion_Queue, resource: Resource) {
-	append(&queue.resources, resource)
+deletion_queue_push :: proc(self: ^Deletion_Queue, resource: Resource) {
+	append(&self.resources, resource)
 }
 
-// LIFO (Last-In, First-Out) deletion
-deletion_queue_flush :: proc(queue: ^Deletion_Queue) {
-	assert(queue != nil)
+// LIFO (Last-In, First-Out) deletion.
+deletion_queue_flush :: proc(self: ^Deletion_Queue) {
+	assert(self != nil)
 
-	if len(queue.resources) == 0 {
+	if len(self.resources) == 0 {
 		return
 	}
 
 	// Process resources in reverse order (LIFO)
-	#reverse for &resource in queue.resources {
-		switch res in resource {
+	#reverse for &resource in self.resources {
+		switch &res in resource {
+		// Higher-level custom resources
+		case ^Allocated_Image:
+			destroy_image(res)
+
+		// Cleanup procedures
 		case Deletion_ProcC:
 			res()
-		case vk.CommandPool:
-			vk.DestroyCommandPool(queue.device, res, nil)
-		case vk.Framebuffer:
-			vk.DestroyFramebuffer(queue.device, res, nil)
+
+		// Pipeline objects
 		case vk.Pipeline:
-			vk.DestroyPipeline(queue.device, res, nil)
+			vk.DestroyPipeline(self.device, res, nil)
 		case vk.PipelineLayout:
-			vk.DestroyPipelineLayout(queue.device, res, nil)
+			vk.DestroyPipelineLayout(self.device, res, nil)
+
+		// Descriptor-related objects
 		case vk.DescriptorPool:
-			vk.DestroyDescriptorPool(queue.device, res, nil)
+			vk.DestroyDescriptorPool(self.device, res, nil)
 		case vk.DescriptorSetLayout:
-			vk.DestroyDescriptorSetLayout(queue.device, res, nil)
-		case vk.RenderPass:
-			vk.DestroyRenderPass(queue.device, res, nil)
+			vk.DestroyDescriptorSetLayout(self.device, res, nil)
+
+		// Resource views and samplers
 		case vk.ImageView:
-			vk.DestroyImageView(queue.device, res, nil)
+			vk.DestroyImageView(self.device, res, nil)
 		case vk.Sampler:
-			vk.DestroySampler(queue.device, res, nil)
-		case Image_Resource:
-			vma.destroy_image(res.allocator, res.image, res.allocation)
+			vk.DestroySampler(self.device, res, nil)
+
+		// Command-related objects
+		case vk.CommandPool:
+			vk.DestroyCommandPool(self.device, res, nil)
+
+		// Synchronization primitives
 		case vk.Fence:
-			vk.DestroyFence(queue.device, res, nil)
+			vk.DestroyFence(self.device, res, nil)
 		case vk.Semaphore:
-			vk.DestroySemaphore(queue.device, res, nil)
+			vk.DestroySemaphore(self.device, res, nil)
+
+		// Core memory resources
 		case vk.Buffer:
-			vk.DestroyBuffer(queue.device, res, nil)
+			vk.DestroyBuffer(self.device, res, nil)
 		case vk.DeviceMemory:
-			vk.FreeMemory(queue.device, res, nil)
+			vk.FreeMemory(self.device, res, nil)
+
+		// Memory allocator
 		case vma.Allocator:
 			vma.destroy_allocator(res)
 		}
 	}
 
 	// Clear the array after processing all resources
-	clear(&queue.resources)
+	clear(&self.resources)
 }
