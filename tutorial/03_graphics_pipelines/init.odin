@@ -496,24 +496,24 @@ engine_init_descriptors :: proc(self: ^Engine) -> (ok: bool) {
 		sizes,
 	) or_return
 	defer if !ok {
-		descriptor_allocator_destroy_pool(&self.global_descriptor_allocator, self.vk_device)
+		descriptor_allocator_destroy_pool(&self.global_descriptor_allocator)
 	}
+	deletion_queue_push(&self.main_deletion_queue, self.global_descriptor_allocator.pool)
 
-	ta := context.temp_allocator
-	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
-
-	// Make the descriptor set layout for our compute draw
-	builder: Descriptor_Layout_Builder
-	descriptor_layout_builder_init(&builder, ta)
-	descriptor_layout_builder_add_binding(&builder, 0, .STORAGE_IMAGE)
-	self.draw_image_descriptor_layout = descriptor_layout_builder_build(
-		&builder,
-		self.vk_device,
-		{.COMPUTE},
-	) or_return
+	{
+		// Make the descriptor set layout for our compute draw
+		builder: Descriptor_Layout_Builder
+		descriptor_layout_builder_init(&builder, self.vk_device)
+		descriptor_layout_builder_add_binding(&builder, 0, .STORAGE_IMAGE)
+		self.draw_image_descriptor_layout = descriptor_layout_builder_build(
+			&builder,
+			{.COMPUTE},
+		) or_return
+	}
 	defer if !ok {
 		vk.DestroyDescriptorSetLayout(self.vk_device, self.draw_image_descriptor_layout, nil)
 	}
+	deletion_queue_push(&self.main_deletion_queue, self.draw_image_descriptor_layout)
 
 	// Allocate a descriptor set for our draw image
 	self.draw_image_descriptors = descriptor_allocator_allocate(
@@ -537,9 +537,6 @@ engine_init_descriptors :: proc(self: ^Engine) -> (ok: bool) {
 	}
 
 	vk.UpdateDescriptorSets(self.vk_device, 1, &draw_image_write, 0, nil)
-
-	deletion_queue_push(&self.main_deletion_queue, self.global_descriptor_allocator.pool)
-	deletion_queue_push(&self.main_deletion_queue, self.draw_image_descriptor_layout)
 
 	return true
 }

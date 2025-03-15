@@ -122,7 +122,7 @@ In these examples:
 - `-o` specifies the output file, `gradient.comp.spv`, which will contain the compiled SPIR-V
   code.
 
-## Setting up the descriptor layout
+## Setting Up The Descriptor Layout
 
 To build the compute pipeline, we need to create its layout. In this case, the layout will only
 contain a single descriptor set that then has a image as its binding 0.
@@ -135,18 +135,22 @@ abstract this so that handling those is simpler. Our descriptor abstractions wil
 package vk_guide
 
 // Core
-import "base:runtime"
 import sa "core:container/small_array"
 
 // Vendor
 import vk "vendor:vulkan"
 
-MAX_BOUND_DESCRIPTOR_SETS :: 8
+MAX_BOUND_DESCRIPTOR_SETS :: #config(MAX_BOUND_DESCRIPTOR_SETS, 16)
 
-Descriptor_Sets :: sa.Small_Array(MAX_BOUND_DESCRIPTOR_SETS, vk.DescriptorSetLayoutBinding)
+Descriptor_Bindings :: sa.Small_Array(MAX_BOUND_DESCRIPTOR_SETS, vk.DescriptorSetLayoutBinding)
 
 Descriptor_Layout_Builder :: struct {
-    bindings: Descriptor_Sets,
+    device:   vk.Device,
+    bindings: Descriptor_Bindings,
+}
+
+descriptor_layout_builder_init :: proc(self: ^Descriptor_Layout_Builder, device: vk.Device) {
+    self.device = device
 }
 ```
 
@@ -182,7 +186,7 @@ descriptor_layout_builder_add_binding :: proc(
         descriptorType  = type,
     }
 
-    sa.push(&self.bindings, new_binding)
+    sa.push_back(&self.bindings, new_binding)
 }
 
 descriptor_layout_builder_clear :: proc(self: ^Descriptor_Layout_Builder) {
@@ -201,7 +205,6 @@ Next is creating the layout itself.
 ```odin
 descriptor_layout_builder_build :: proc(
     self: ^Descriptor_Layout_Builder,
-    device: vk.Device,
     shader_stages: vk.ShaderStageFlags,
     pNext: rawptr = nil,
     flags: vk.DescriptorSetLayoutCreateFlags = {},
@@ -210,25 +213,22 @@ descriptor_layout_builder_build :: proc(
     set: vk.DescriptorSetLayout,
     ok: bool,
 ) #optional_ok {
-    assert(device != nil, "Invalid Vulkan device handle.", loc = loc)
     assert(shader_stages != {}, "No shader stages specified for descriptor set layout.", loc = loc)
     assert(sa.len(self.bindings) > 0, "No bindings added to descriptor layout builder.", loc = loc)
 
-    bindings := sa.slice(&self.bindings)
-
-    for &b in bindings {
+    for &b in sa.slice(&self.bindings) {
         b.stageFlags += shader_stages
     }
 
     info := vk.DescriptorSetLayoutCreateInfo {
         sType        = .DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
         pNext        = pNext,
-        bindingCount = u32(len(bindings)),
-        pBindings    = raw_data(bindings),
+        bindingCount = u32(sa.len(self.bindings)),
+        pBindings    = raw_data(sa.slice(&self.bindings)),
         flags        = flags,
     }
 
-    vk_check(vk.CreateDescriptorSetLayout(device, &info, nil, &set)) or_return
+    vk_check(vk.CreateDescriptorSetLayout(self.device, &info, nil, &set)) or_return
 
     return set, true
 }
@@ -255,7 +255,8 @@ Pool_Size_Ratio :: struct {
 }
 
 Descriptor_Allocator :: struct {
-     vk.DescriptorPool,
+    device: vk.Device,
+    vk.DescriptorPool,
 }
 ```
 
@@ -280,6 +281,10 @@ pool, and allocate a descriptor set from it.
 Lets write the code now.
 
 ```odin
+MAX_POOL_SIZES :: #config(MAX_POOL_SIZES, 12)
+
+Pool_Sizes :: sa.Small_Array(MAX_POOL_SIZES, vk.DescriptorPoolSize)
+
 descriptor_allocator_init_pool :: proc(
     self: ^Descriptor_Allocator,
     device: vk.Device,
@@ -288,14 +293,12 @@ descriptor_allocator_init_pool :: proc(
 ) -> (
     ok: bool,
 ) {
-    ta := context.temp_allocator
-    runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
+    self.device = device
 
-    pool_sizes := make([dynamic]vk.DescriptorPoolSize, ta)
-    reserve(&pool_sizes, len(pool_ratios))
+    pool_sizes: Pool_Sizes
 
     for &ratio in pool_ratios {
-        append(
+        sa.push_back(
             &pool_sizes,
             vk.DescriptorPoolSize {
                 type = ratio.type,
@@ -307,8 +310,8 @@ descriptor_allocator_init_pool :: proc(
     pool_info := vk.DescriptorPoolCreateInfo {
         sType         = .DESCRIPTOR_POOL_CREATE_INFO,
         maxSets       = max_sets,
-        poolSizeCount = u32(len(pool_sizes)),
-        pPoolSizes    = raw_data(pool_sizes[:]),
+        poolSizeCount = u32(sa.len(pool_sizes)),
+        pPoolSizes    = raw_data(sa.slice(&pool_sizes)),
     }
 
     vk_check(vk.CreateDescriptorPool(device, &pool_info, nil, &self.pool)) or_return
@@ -316,12 +319,12 @@ descriptor_allocator_init_pool :: proc(
     return true
 }
 
-descriptor_allocator_clear_descriptors :: proc(self: ^Descriptor_Allocator, device: vk.Device) {
-    vk.ResetDescriptorPool(device, self.pool, {})
+descriptor_allocator_clear_descriptors :: proc(self: ^Descriptor_Allocator) {
+    vk.ResetDescriptorPool(self.device, self.pool, {})
 }
 
-descriptor_allocator_destroy_pool :: proc(self: ^Descriptor_Allocator, device: vk.Device) {
-    vk.DestroyDescriptorPool(device, self.pool, nil)
+descriptor_allocator_destroy_pool :: proc(self: ^Descriptor_Allocator) {
+    vk.DestroyDescriptorPool(self.device, self.pool, nil)
 }
 ```
 
@@ -363,7 +366,7 @@ descriptor_allocator_allocate :: proc(
 We need to fill the `vk.DescriptorSetAllocateInfo`. It needs the descriptor pool we will
 allocate from, how many descriptor sets to allocate, and the set layout.
 
-## Initializing the layout and descriptors
+## Initializing The Layout And Descriptors
 
 Lets add a new procedure to the engine and some new fields we will use.
 
@@ -412,21 +415,19 @@ engine_init_descriptors :: proc(self: ^Engine) -> (ok: bool) {
         10,
         sizes,
     ) or_return
-    defer if !ok {
-        descriptor_allocator_destroy_pool(&self.global_descriptor_allocator, self.vk_device)
-    }
+    deletion_queue_push(&self.main_deletion_queue, self.global_descriptor_allocator.pool)
 
-    // Make the descriptor set layout for our compute draw
-    builder: Descriptor_Layout_Builder
-    descriptor_layout_builder_add_binding(&builder, 0, .STORAGE_IMAGE)
-    self.draw_image_descriptor_layout = descriptor_layout_builder_build(
-        &builder,
-        self.vk_device,
-        {.COMPUTE},
-    ) or_return
-    defer if !ok {
-        vk.DestroyDescriptorSetLayout(self.vk_device, self.draw_image_descriptor_layout, nil)
+    {
+        // Make the descriptor set layout for our compute draw
+        builder: Descriptor_Layout_Builder
+        descriptor_layout_builder_init(&builder, self.vk_device)
+        descriptor_layout_builder_add_binding(&builder, 0, .STORAGE_IMAGE)
+        self.draw_image_descriptor_layout = descriptor_layout_builder_build(
+            &builder,
+            {.COMPUTE},
+        ) or_return
     }
+    deletion_queue_push(&self.main_deletion_queue, self.draw_image_descriptor_layout)
 
     return true
 }
@@ -473,9 +474,6 @@ engine_init_descriptors :: proc(self: ^Engine) -> (ok: bool) {
 
     vk.UpdateDescriptorSets(self.vk_device, 1, &draw_image_write, 0, nil)
 
-    deletion_queue_push(&self.main_deletion_queue, self.global_descriptor_allocator.pool)
-    deletion_queue_push(&self.main_deletion_queue, self.draw_image_descriptor_layout)
-
     return true
 }
 ```
@@ -491,7 +489,7 @@ data we want to bind, which is going to be the imageview for our draw image.
 With this done, we now have a descriptor set we can use to bind our draw image, and the layout
 we needed. We can finally proceed to creating the compute pipeline
 
-## The compute pipeline
+## The Compute Pipeline
 
 With the descriptor set layout, we now have a way of creating the pipeline layout. There is one
 last thing we have to do before creating the pipeline, which is to load the shader code to the
@@ -694,7 +692,7 @@ program.
 
 We are now ready to draw with it.
 
-## Drawing with compute
+## Drawing With Compute
 
 Go back to the `engine_draw_background()` procedure, we will replace the `vk.CmdClear` with a
 compute shader invocation.
