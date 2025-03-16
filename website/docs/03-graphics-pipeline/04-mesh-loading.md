@@ -484,7 +484,16 @@ projection matrix. We will be doing that.
 From the render code, lets give it a better matrix for rendering. Add this code right before
 the push constants call that draws the mesh on `engine_draw_geometry().`
 
-```odin
+First, create a file called `math.odin` that will contain some code that are not implemented in
+any Odin package.
+
+```odin title="math.odin"
+package vk_guide
+
+// Core
+import "core:math"
+import la "core:math/linalg"
+
 matrix4_perspective_reverse_z_f32 :: proc "contextless" (
     fovy, aspect, near: f32,
     flip_y_axis := true,
@@ -509,7 +518,12 @@ matrix4_perspective_reverse_z_f32 :: proc "contextless" (
 
     return
 }
+```
 
+The `matrix4_perspective_reverse_z_f32` procedure generates a 4x4 perspective projection matrix
+with a reverse-Z configuration.
+
+```odin title="engine.odin"
 // Create view matrix - place camera at positive Z looking at origin
 view := la.matrix4_translate_f32({0, 0, -5})
 
