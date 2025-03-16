@@ -417,7 +417,7 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
 	}
 
 	// Add to deletion queues
-	deletion_queue_push(&self.main_deletion_queue, &self.draw_image)
+	deletion_queue_push(&self.main_deletion_queue, self.draw_image)
 
 	return true
 }

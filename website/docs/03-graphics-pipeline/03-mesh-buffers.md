@@ -304,7 +304,7 @@ With a create buffer procedure, we also need a destroy buffer procedure. The onl
 to do is to call `vma.destroy_buffer`.
 
 ```odin
-destroy_buffer :: proc(self: ^Allocated_Buffer) {
+destroy_buffer :: proc(self: Allocated_Buffer) {
     vma.destroy_buffer(self.allocator, self.buffer, self.allocation)
 }
 ```
@@ -322,7 +322,7 @@ deletion_queue_flush :: proc(queue: ^Deletion_Queue) {
     #reverse for &resource in queue.resources {
         switch &res in resource {
         // Higher-level custom resources
-        case ^Allocated_Buffer:
+        case Allocated_Buffer:
             destroy_buffer(res)
         }
     }
@@ -392,7 +392,7 @@ upload_mesh :: proc(
         .Gpu_Only,
     ) or_return
     defer if !ok {
-        destroy_buffer(&new_surface.vertex_buffer)
+        destroy_buffer(new_surface.vertex_buffer)
     }
 
     // Find the address of the vertex buffer
@@ -413,7 +413,7 @@ upload_mesh :: proc(
         .Gpu_Only,
     ) or_return
     defer if !ok {
-        destroy_buffer(&new_surface.index_buffer)
+        destroy_buffer(new_surface.index_buffer)
     }
 
     return new_surface, true
@@ -463,7 +463,7 @@ upload_mesh :: proc(
         {.TRANSFER_SRC},
         .Cpu_Only,
     ) or_return
-    defer destroy_buffer(&staging)
+    defer destroy_buffer(staging)
 
     data := staging.info.mapped_data
     // Copy vertex buffer

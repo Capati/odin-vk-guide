@@ -416,7 +416,7 @@ Allocated_Image :: struct {
     allocation:   vma.Allocation,
 }
 
-destroy_image :: proc(self: ^Allocated_Image) {
+destroy_image :: proc(self: Allocated_Image) {
     vk.DestroyImageView(self.device, self.image_view, nil)
     vma.destroy_image(self.allocator, self.image, self.allocation)
 }
@@ -491,7 +491,7 @@ deletion_queue_flush :: proc(self: ^Deletion_Queue) {
     #reverse for &resource in self.resources {
         switch &res in resource {
         // Higher-level custom resources
-        case ^Allocated_Image:
+        case Allocated_Image:
             destroy_image(res)
         }
     }
@@ -566,7 +566,7 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
     }
 
     // Add to deletion queues
-    deletion_queue_push(&self.main_deletion_queue, &self.draw_image)
+    deletion_queue_push(&self.main_deletion_queue, self.draw_image)
 
     return true
 }

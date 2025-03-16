@@ -601,7 +601,7 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
     }
 
     // Add to deletion queues
-    deletion_queue_push(&self.main_deletion_queue, &self.depth_image)
+    deletion_queue_push(&self.main_deletion_queue, self.depth_image)
 
     return true
 }
@@ -716,8 +716,8 @@ of the mesh array in the cleanup procedure, before the main deletion queue flush
 
 ```odin
 for &mesh in self.test_meshes {
-    destroy_buffer(&mesh.mesh_buffers.index_buffer)
-    destroy_buffer(&mesh.mesh_buffers.vertex_buffer)
+    destroy_buffer(mesh.mesh_buffers.index_buffer)
+    destroy_buffer(mesh.mesh_buffers.vertex_buffer)
 }
 destroy_mesh_assets(&self.test_meshes)
 

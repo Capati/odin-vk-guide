@@ -35,7 +35,7 @@ Allocated_Image :: struct {
     allocation:   vma.Allocation,
 }
 
-destroy_image :: proc(self: ^Allocated_Image) {
+destroy_image :: proc(self: Allocated_Image) {
     vk.DestroyImageView(self.device, self.image_view, nil)
     vma.destroy_image(self.allocator, self.image, self.allocation)
 }

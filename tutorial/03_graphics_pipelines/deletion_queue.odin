@@ -13,8 +13,8 @@ Deletion_ProcC :: #type proc "c" ()
 
 Resource :: union {
 	// Higher-level custom resources
-	^Allocated_Image,
-	^Allocated_Buffer,
+	Allocated_Image,
+	Allocated_Buffer,
 
 	// Cleanup procedures
 	Deletion_ProcC,
@@ -93,9 +93,9 @@ deletion_queue_flush :: proc(self: ^Deletion_Queue) {
 	#reverse for &resource in self.resources {
 		switch &res in resource {
 		// Higher-level custom resources
-		case ^Allocated_Image:
+		case Allocated_Image:
 			destroy_image(res)
-		case ^Allocated_Buffer:
+		case Allocated_Buffer:
 			destroy_buffer(res)
 
 		// Cleanup procedures
