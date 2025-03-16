@@ -131,6 +131,13 @@ To build a descriptor layout, we need to store an array of bindings. Lets create
 abstract this so that handling those is simpler. Our descriptor abstractions will go into
 `descriptors.odin`.
 
+:::warning[]
+
+We will use fixed array with default maximums based on typical Vulkan implementations, These
+values can be too much or not enough, but we can adjust them as needed.
+
+:::
+
 ```odin title="descriptors.odin"
 package vk_guide
 
