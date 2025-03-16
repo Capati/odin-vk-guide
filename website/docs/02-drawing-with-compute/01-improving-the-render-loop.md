@@ -433,6 +433,9 @@ Engine :: struct {
 }
 ```
 
+For the `destroy_image` procedure, we first destroy the image-view, and then destroy the
+image itself using **VMA**. This will free the image and its memory correctly.
+
 Lets check the `initializers.odin` procedure for image and imageview create info.
 
 ```odin title="initializers.odin"
