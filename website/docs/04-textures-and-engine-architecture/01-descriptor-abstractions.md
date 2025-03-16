@@ -640,14 +640,14 @@ We also need to update the deletion queue:
 ```odin title="deletion_queue.odin"
 Resource :: union {
     // Higher-level custom resources
-    ^Descriptor_Allocator_Growable,
+    Descriptor_Allocator_Growable,
 }
 
 deletion_queue_flush :: proc(queue: ^Deletion_Queue) {
     #reverse for &resource in queue.resources {
         switch &res in resource {
         // Higher-level custom resources
-        case ^Descriptor_Allocator_Growable:
+        case Descriptor_Allocator_Growable:
             descriptor_growable_destroy_pools(res)
         }
     }
