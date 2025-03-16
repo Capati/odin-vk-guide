@@ -78,7 +78,7 @@ We are able to draw meshes now, but there are still some things that need doing.
 sets up image loading from files to use in shaders, and sets up a rendering architecture that
 is fast and extensible.
 
-- [ ] Descriptor Abstractions
+- [x] Descriptor Abstractions
 - [ ] Textures
 - [ ] Engine Architecture
 - [ ] Setting up Materials

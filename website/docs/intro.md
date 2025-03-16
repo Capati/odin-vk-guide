@@ -46,5 +46,6 @@ The guide is separated into multiple sections for code organization.
   a compute shader to draw)
 - **[Chapter 3](/category/3-graphics-pipelines)** - Vulkan mesh drawing (Draws meshes using
   the graphics pipeline)
-- **Chapter 4** - Textures and better descriptor set management
+- **[Chapter 4](/category/4-textures-and-engine-architecture)** - Textures and better
+  descriptor set management
 - **Chapter 5** - Full GLTF scene loading and high performance rendering
