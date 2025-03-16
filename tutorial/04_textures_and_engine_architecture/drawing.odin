@@ -281,6 +281,8 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
 	render_info := rendering_info(self.draw_extent, &color_attachment, &depth_attachment)
 	vk.CmdBeginRendering(cmd, &render_info)
 
+	frame := engine_get_current_frame(self)
+
 	vk.CmdBindPipeline(cmd, .GRAPHICS, self.mesh_pipeline)
 
 	// Set dynamic viewport and scissor
@@ -302,30 +304,27 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
 
 	vk.CmdSetScissor(cmd, 0, 1, &scissor)
 
-	matrix4_perspective_reverse_z_f32 :: proc "contextless" (
-		fovy, aspect, near: f32,
-		flip_y_axis := true,
-	) -> (
-		m: la.Matrix4f32,
-	) #no_bounds_check {
-		epsilon :: 0.00000095367431640625 // 2^-20 or about 10^-6
-		fov_scale := 1 / math.tan(fovy * 0.5)
+	// Bind a texture
+	image_set := descriptor_growable_allocate(
+		&frame.frame_descriptors,
+		&self.single_image_descriptor_layout,
+	) or_return
 
-		m[0, 0] = fov_scale / aspect
-		m[1, 1] = fov_scale
-
-		// Set up reverse-Z configuration
-		m[2, 2] = epsilon
-		m[2, 3] = near * (1 - epsilon)
-		m[3, 2] = -1
-
-		// Handle Vulkan Y-flip if needed
-		if flip_y_axis {
-			m[1, 1] = -m[1, 1]
-		}
-
-		return
+	{
+		writer: Descriptor_Writer
+		descriptor_writer_init(&writer, self.vk_device)
+		descriptor_writer_write_image(
+			&writer,
+			binding = 0,
+			image = self.error_checkerboard_image.image_view,
+			sampler = self.default_sampler_nearest,
+			layout = .SHADER_READ_ONLY_OPTIMAL,
+			type = .COMBINED_IMAGE_SAMPLER,
+		)
+		descriptor_writer_update_set(&writer, image_set)
 	}
+
+	vk.CmdBindDescriptorSets(cmd, .GRAPHICS, self.mesh_pipeline_layout, 0, 1, &image_set, 0, nil)
 
 	// Create view matrix - place camera at positive Z looking at origin
 	view := la.matrix4_translate_f32({0, 0, -5})
@@ -372,7 +371,6 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
 	) or_return
 
 	// Add it to the deletion queue of this frame so it gets deleted once its been used
-	frame := engine_get_current_frame(self)
 	deletion_queue_push(&frame.deletion_queue, gpu_scene_data_buffer)
 
 	// Write the buffer

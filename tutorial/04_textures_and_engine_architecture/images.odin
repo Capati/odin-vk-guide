@@ -1,7 +1,14 @@
 package vk_guide
 
+// Core
+import intr "base:intrinsics"
+import "core:math"
+
 // Vendor
 import vk "vendor:vulkan"
+
+// Libraries
+import "libs:vma"
 
 transition_image :: proc(
 	cmd: vk.CommandBuffer,
@@ -70,4 +77,151 @@ copy_image_to_image :: proc(
 	}
 
 	vk.CmdBlitImage2(cmd, &blit_info)
+}
+
+Allocated_Image :: struct {
+	device:       vk.Device,
+	image:        vk.Image,
+	image_view:   vk.ImageView,
+	image_extent: vk.Extent3D,
+	image_format: vk.Format,
+	allocator:    vma.Allocator,
+	allocation:   vma.Allocation,
+}
+
+@(require_results)
+create_image_default :: proc(
+	self: ^Engine,
+	size: vk.Extent3D,
+	format: vk.Format,
+	usage: vk.ImageUsageFlags,
+	mipmapped := false,
+) -> (
+	new_image: Allocated_Image,
+	ok: bool,
+) {
+	new_image.allocator = self.vma_allocator
+	new_image.device = self.vk_device
+	new_image.image_format = format
+	new_image.image_extent = size
+
+	img_info := image_create_info(format, usage, size)
+	if mipmapped {
+		img_info.mipLevels = u32(math.floor(math.log2(max(f32(size.width), f32(size.height))))) + 1
+	}
+
+	// Always allocate images on dedicated GPU memory
+	alloc_info := vma.Allocation_Create_Info {
+		usage          = .Gpu_Only,
+		required_flags = {.DEVICE_LOCAL},
+	}
+
+	// Allocate and create the image
+	vk_check(
+		vma.create_image(
+			self.vma_allocator,
+			img_info,
+			alloc_info,
+			&new_image.image,
+			&new_image.allocation,
+			nil,
+		),
+	) or_return
+	defer if !ok {
+		vma.destroy_image(self.vma_allocator, new_image.image, nil)
+	}
+
+	// If the format is a depth format, we will need to have it use the correct aspect flag
+	aspect_flag := vk.ImageAspectFlags{.COLOR}
+	if format == .D32_SFLOAT {
+		aspect_flag = vk.ImageAspectFlags{.DEPTH}
+	}
+
+	// Build a image-view for the draw image to use for rendering
+	view_info := imageview_create_info(new_image.image_format, new_image.image, {.COLOR})
+
+	vk_check(vk.CreateImageView(self.vk_device, &view_info, nil, &new_image.image_view)) or_return
+	defer if !ok {
+		vk.DestroyImageView(self.vk_device, new_image.image_view, nil)
+	}
+
+	return new_image, true
+}
+
+@(require_results)
+create_image_from_data :: proc(
+	self: ^Engine,
+	data: rawptr,
+	size: vk.Extent3D,
+	format: vk.Format,
+	usage: vk.ImageUsageFlags,
+	mipmapped := false,
+) -> (
+	new_image: Allocated_Image,
+	ok: bool,
+) {
+	data_size := vk.DeviceSize(size.depth * size.width * size.height * 4)
+	upload_buffer := create_buffer(self, data_size, {.TRANSFER_SRC}, .Cpu_To_Gpu) or_return
+	defer destroy_buffer(upload_buffer)
+
+	intr.mem_copy(upload_buffer.info.mapped_data, data, data_size)
+
+	usage := usage
+	usage += {.TRANSFER_DST, .TRANSFER_SRC}
+	new_image = create_image_default(self, size, format, usage, mipmapped) or_return
+	defer if !ok {
+		destroy_image(new_image)
+	}
+
+	Copy_Image_Data :: struct {
+		upload_buffer: vk.Buffer,
+		new_image:     vk.Image,
+		size:          vk.Extent3D,
+	}
+
+	copy_data := Copy_Image_Data {
+		upload_buffer = upload_buffer.buffer,
+		new_image     = new_image.image,
+		size          = size,
+	}
+
+	engine_immediate_submit(
+		self,
+		copy_data,
+		proc(engine: ^Engine, cmd: vk.CommandBuffer, data: Copy_Image_Data) {
+			// Transition image to transfer destination layout
+			transition_image(cmd, data.new_image, .UNDEFINED, .TRANSFER_DST_OPTIMAL)
+
+			// Setup the copy region
+			copy_region := vk.BufferImageCopy {
+				imageSubresource = {aspectMask = {.COLOR}, layerCount = 1},
+				imageExtent = data.size,
+			}
+
+			// Copy the buffer into the image
+			vk.CmdCopyBufferToImage(
+				cmd,
+				data.upload_buffer,
+				data.new_image,
+				.TRANSFER_DST_OPTIMAL,
+				1,
+				&copy_region,
+			)
+
+			// Transition image to shader read layout
+			transition_image(cmd, data.new_image, .TRANSFER_DST_OPTIMAL, .SHADER_READ_ONLY_OPTIMAL)
+		},
+	) or_return
+
+	return new_image, true
+}
+
+create_image :: proc {
+	create_image_default,
+	create_image_from_data,
+}
+
+destroy_image :: proc(self: Allocated_Image) {
+	vk.DestroyImageView(self.device, self.image_view, nil)
+	vma.destroy_image(self.allocator, self.image, self.allocation)
 }

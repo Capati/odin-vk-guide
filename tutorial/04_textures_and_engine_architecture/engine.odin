@@ -116,6 +116,15 @@ Engine :: struct {
     scene_data:                       GPU_Scene_Data,
     gpu_scene_data_descriptor_layout: vk.DescriptorSetLayout,
 
+    // Textures
+    white_image:                      Allocated_Image,
+    black_image:                      Allocated_Image,
+    grey_image:                       Allocated_Image,
+    error_checkerboard_image:         Allocated_Image,
+    default_sampler_linear:           vk.Sampler,
+    default_sampler_nearest:          vk.Sampler,
+    single_image_descriptor_layout:   vk.DescriptorSetLayout,
+
     // Helper libraries
     vkb:                              struct {
         instance:        ^vkb.Instance,

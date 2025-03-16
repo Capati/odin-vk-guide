@@ -79,7 +79,7 @@ sets up image loading from files to use in shaders, and sets up a rendering arch
 is fast and extensible.
 
 - [x] Descriptor Abstractions
-- [ ] Textures
+- [x] Textures
 - [ ] Engine Architecture
 - [ ] Setting up Materials
 - [ ] Meshes and Camera

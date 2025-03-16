@@ -574,6 +574,17 @@ engine_init_descriptors :: proc(self: ^Engine) -> (ok: bool) {
 	}
 	deletion_queue_push(&self.main_deletion_queue, self.gpu_scene_data_descriptor_layout)
 
+	{
+		builder: Descriptor_Layout_Builder
+		descriptor_layout_builder_init(&builder, self.vk_device)
+		descriptor_layout_builder_add_binding(&builder, 0, .COMBINED_IMAGE_SAMPLER)
+		self.single_image_descriptor_layout = descriptor_layout_builder_build(
+			&builder,
+			{.FRAGMENT},
+		) or_return
+	}
+	deletion_queue_push(&self.main_deletion_queue, self.single_image_descriptor_layout)
+
 	return true
 }
 
@@ -677,7 +688,7 @@ engine_init_background_pipeline :: proc(self: ^Engine) -> (ok: bool) {
 engine_init_mesh_pipeline :: proc(self: ^Engine) -> (ok: bool) {
 	triangle_frag_shader := create_shader_module(
 		self.vk_device,
-		#load("./../../shaders/compiled/colored_triangle.frag.spv"),
+		#load("./../../shaders/compiled/tex_image.frag.spv"),
 	) or_return
 	defer vk.DestroyShaderModule(self.vk_device, triangle_frag_shader, nil)
 
@@ -696,6 +707,8 @@ engine_init_mesh_pipeline :: proc(self: ^Engine) -> (ok: bool) {
 	pipeline_layout_info := pipeline_layout_create_info()
 	pipeline_layout_info.pPushConstantRanges = &buffer_range
 	pipeline_layout_info.pushConstantRangeCount = 1
+	pipeline_layout_info.pSetLayouts = &self.single_image_descriptor_layout
+	pipeline_layout_info.setLayoutCount = 1
 
 	vk_check(
 		vk.CreatePipelineLayout(
@@ -722,8 +735,8 @@ engine_init_mesh_pipeline :: proc(self: ^Engine) -> (ok: bool) {
 	// No multisampling
 	pipeline_builder_set_multisampling_none(&builder)
 	// No blending
-	// pipeline_builder_disable_blending(&builder)
-	pipeline_builder_enable_blending_additive(&builder)
+	pipeline_builder_disable_blending(&builder)
+	// pipeline_builder_enable_blending_additive(&builder)
 	// No depth testing
 	// pipeline_builder_disable_depth_test(&builder)
 	pipeline_builder_enable_depth_test(&builder, true, .GREATER_OR_EQUAL)
@@ -831,6 +844,73 @@ engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
 	defer if !ok {
 		destroy_mesh_assets(&self.test_meshes)
 	}
+
+	// 3 default textures, white, grey, black. 1 pixel each
+	white := pack_unorm_4x8({1, 1, 1, 1})
+	self.white_image = create_image_from_data(
+		self,
+		&white,
+		{1, 1, 1},
+		.R8G8B8A8_UNORM,
+		{.SAMPLED},
+	) or_return
+	deletion_queue_push(&self.main_deletion_queue, self.white_image)
+
+	grey := pack_unorm_4x8({0.66, 0.66, 0.66, 1})
+	self.grey_image = create_image_from_data(
+		self,
+		&grey,
+		{1, 1, 1},
+		.R8G8B8A8_UNORM,
+		{.SAMPLED},
+	) or_return
+	deletion_queue_push(&self.main_deletion_queue, self.grey_image)
+
+	black := pack_unorm_4x8({0, 0, 0, 0})
+	self.black_image = create_image_from_data(
+		self,
+		&black,
+		{1, 1, 1},
+		.R8G8B8A8_UNORM,
+		{.SAMPLED},
+	) or_return
+	deletion_queue_push(&self.main_deletion_queue, self.black_image)
+
+	// Checkerboard image
+	magenta := pack_unorm_4x8({1, 0, 1, 1})
+	pixels: [16 * 16]u32
+	for x in 0 ..< 16 {
+		for y in 0 ..< 16 {
+			pixels[y * 16 + x] = ((x % 2) ~ (y % 2)) != 0 ? magenta : black
+		}
+	}
+	self.error_checkerboard_image = create_image_from_data(
+		self,
+		raw_data(pixels[:]),
+		{16, 16, 1},
+		.R8G8B8A8_UNORM,
+		{.SAMPLED},
+	) or_return
+	deletion_queue_push(&self.main_deletion_queue, self.error_checkerboard_image)
+
+	sampler_info := vk.SamplerCreateInfo {
+		sType     = .SAMPLER_CREATE_INFO,
+		magFilter = .NEAREST,
+		minFilter = .NEAREST,
+	}
+
+	vk_check(
+		vk.CreateSampler(self.vk_device, &sampler_info, nil, &self.default_sampler_nearest),
+	) or_return
+	deletion_queue_push(&self.main_deletion_queue, self.default_sampler_nearest)
+
+	sampler_info.magFilter = .LINEAR
+	sampler_info.minFilter = .LINEAR
+
+	vk_check(
+		vk.CreateSampler(self.vk_device, &sampler_info, nil, &self.default_sampler_linear),
+	) or_return
+	deletion_queue_push(&self.main_deletion_queue, self.default_sampler_linear)
 
 	return true
 }
