@@ -704,7 +704,7 @@ a single descriptor set for all objects so there isnt any overhead of managing i
 ```odin
 {
     builder: Descriptor_Layout_Builder
-    descriptor_layout_builder_init(&builder, ta)
+    descriptor_layout_builder_init(&builder, self.vk_device)
     descriptor_layout_builder_add_binding(&builder, 0, .UNIFORM_BUFFER)
     self.gpu_scene_data_descriptor_layout = descriptor_layout_builder_build(
         &builder,
