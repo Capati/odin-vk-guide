@@ -179,7 +179,28 @@ to use the tasks system.
 }
 ```
 
-Note that we are still using the scripts to help build the examples. Learn more about tasks
-from the official tutorial [Integrate with External Tools via Tasks][].
+Note that we’re still relying on the provided scripts to build the examples. By default, the
+`command` builds from the `tutorial` folder. But you can modify it to point to your own `src`
+directory instead:
+
+Example before:
+
+```json
+"windows": {
+    "command": "build.bat tutorial/${input:tutorialName} run"
+},
+```
+
+After:
+
+```json
+"windows": {
+    "command": "build.bat src/${input:tutorialName} run"
+},
+```
+
+Just make sure the `options` match the folders name.
+
+Learn more about tasks from the official tutorial [Integrate with External Tools via Tasks][].
 
 [Integrate with External Tools via Tasks]: https://code.visualstudio.com/Docs/editor/tasks
