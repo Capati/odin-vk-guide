@@ -46,7 +46,7 @@ Make sure you have installed all the **prerequisites** listed above before conti
 
     Now you can use the `src` folder to start coding. Of course, you can create your own
     project structure outside of this repo, just ensure you have the required files and
-    external libraries in place or as as `collection` somewhere.
+    external libraries in place or as a `collection` somewhere.
 
 2. For the external libraries, you need to compile the follow:
 
