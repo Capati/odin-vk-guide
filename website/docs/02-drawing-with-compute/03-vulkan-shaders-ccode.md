@@ -120,7 +120,7 @@ Command breakdown:
 - `-entry main` - Specifies the entry point function name
   - The compiler will look for a function named `main` as the shader entry point. In our
     shaders, we will always use `main` as the entry point
-    - For compute shaders, this function is decorated with `[shader("compute")]`.
+  - For compute shaders, this function is decorated with `[shader("compute")]`.
 - `-profile glsl_450` - Specifies **GLSL 4.50** as the shader model/language version
   - This tells the compiler to follow GLSL 4.50 language rules and feature set
   - This profile is compatible with Vulkan
