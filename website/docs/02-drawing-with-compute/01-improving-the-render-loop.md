@@ -38,11 +38,9 @@ import vk "vendor:vulkan"
 // Libraries
 import "libs:vma"
 
-Deletion_ProcC :: #type proc "c" ()
-
 Resource :: union {
     // Cleanup procedures
-    Deletion_ProcC,
+    proc "c" (),
 
     // Pipeline objects
     vk.Pipeline,
@@ -118,8 +116,8 @@ deletion_queue_flush :: proc(self: ^Deletion_Queue) {
     #reverse for &resource in self.resources {
         switch &res in resource {
         // Cleanup procedures
-        case Deletion_ProcC:
-            res()
+        case proc "c" ():
+          res()
 
         // Pipeline objects
         case vk.Pipeline:

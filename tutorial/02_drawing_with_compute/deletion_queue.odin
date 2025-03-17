@@ -9,14 +9,12 @@ import vk "vendor:vulkan"
 // Libraries
 import "libs:vma"
 
-Deletion_ProcC :: #type proc "c" ()
-
 Resource :: union {
 	// Higher-level custom resources
 	Allocated_Image,
 
 	// Cleanup procedures
-	Deletion_ProcC,
+	proc "c" (),
 
 	// Pipeline objects
 	vk.Pipeline,
@@ -96,7 +94,7 @@ deletion_queue_flush :: proc(self: ^Deletion_Queue) {
 			destroy_image(res)
 
 		// Cleanup procedures
-		case Deletion_ProcC:
+		case proc "c" ():
 			res()
 
 		// Pipeline objects
