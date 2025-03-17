@@ -61,6 +61,20 @@ Make sure you have installed all the **prerequisites** listed above before conti
     them before proceeding. Other libraries are either in `vendor` or does not require
     compilation.
 
+### Pre-Compiled Binaries for Windows
+
+If you're using Windows and would rather not compile the libraries yourself—or if you run into
+problems with the build tools—you can opt for pre-compiled binaries instead.
+
+These binaries include the **VMA** and **ImGui** libraries:
+
+[https://capati.github.io/odin-vk-guide/odin-vk-guide-libs.zip](https://capati.github.io/odin-vk-guide/odin-vk-guide-libs.zip)
+
+After downloading, simply copy or move each library file to its corresponding folder:
+
+- `imgui_windows_x64.lib` - Copy to `libs/imgui`
+- `vma_windows_x86_64.lib` - Copy to `libs/vma`
+
 ## Building Project
 
 To test that everything is prepared, lets go ahead and build the tutorial **2. Drawing with
