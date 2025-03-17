@@ -10,64 +10,68 @@ shader that has an image as input, and writes a color to it, based on the thread
 gradient. This one is already on the code, in the shaders folder. From now on, all the shaders
 we add will go into that folder as the CMake script will build them.
 
-```glsl title="/shaders/source/gradient.comp"
-#version 460
+```hlsl title="/shaders/source/gradient.comp.slang"
+RWTexture2D<float4> image;
 
-layout(local_size_x = 16, local_size_y = 16) in;
+[shader("compute")]
+[numthreads(16, 16, 1)]
+void main(
+    uint3 dispatchThreadID: SV_DispatchThreadID,
+    uint3 groupThreadID: SV_GroupThreadID)
+{
+    int2 texelCoord = int2(dispatchThreadID.xy);
+    var size = uint2(0, 0);
+    image.GetDimensions(size.x, size.y);
 
-layout(rgba16f, set = 0, binding = 0) uniform image2D image;
+    if (texelCoord.x < size.x && texelCoord.y < size.y)
+    {
+        float4 color = float4(0.0, 0.0, 0.0, 1.0);
 
-void main() {
-    ivec2 texelCoord = ivec2(gl_GlobalInvocationID.xy);
-    ivec2 size = imageSize(image);
-
-    if (texelCoord.x < size.x && texelCoord.y < size.y) {
-        vec4 color = vec4(0.0, 0.0, 0.0, 1.0);
-
-        if (gl_LocalInvocationID.x != 0 && gl_LocalInvocationID.y != 0) {
-            color.x = float(texelCoord.x) / (size.x);
-            color.y = float(texelCoord.y) / (size.y);
+        if (groupThreadID.x != 0 && groupThreadID.y != 0)
+        {
+            color.x = float(texelCoord.x) / float(size.x);
+            color.y = float(texelCoord.y) / float(size.y);
         }
 
-        imageStore(image, texelCoord, color);
+        image[texelCoord] = color;
     }
 }
 ```
 
-We start by specifying the GLSL version for the shader. In this case, we use version 460, which
-corresponds to GLSL 4.6. This version provides a robust feature set suitable for modern compute
-shaders.
+The shader begins with the declaration `RWTexture2D<float4> image`, which defines a read-write
+2D texture resource. Each element of this texture is a four-component vector (`float4`),
+typically representing red, green, blue, and alpha channels (RGBA). This texture serves as the
+output target, where the shader will write its computed results.
 
-Next, we define the workgroup size using a `layout` statement. When a compute shader executes,
-it runs in groups of threads (or "lanes"), and the workgroup size determines how these threads
-are organized. Here, we specify a size of `x=16`, `y=16`, `z=1` (where `z=1` is the default).
-This means each workgroup consists of a 16x16 grid of threads, totaling 256 threads per group,
-all working in parallel within the shader.
-
-Following that, we use another `layout` statement to define the shader's input, which is
-managed through Vulkan descriptor sets. We specify a single `image2D` resource, assigned to
-descriptor set 0 at binding 0. In Vulkan, descriptor sets are collections of resources (like
-images or buffers) that the shader can access. Each set can contain multiple bindings, which
-are individual slots for those resources. In this case, we have one descriptor set (index 0)
-with a single `image2D` bound to binding 0 within that set.
+The `[shader("compute")]` attribute explicitly designates this as a compute shader,
+distinguishing it from other shader types such as vertex or fragment shaders. Compute shaders
+operate on a grid of threads, enabling highly parallel execution. The `[numthreads(16, 16, 1)]`
+attribute specifies the thread group size, defining a 16x16x1 grid of threads. This
+configuration results in 256 threads per group, with the third dimension (z) set to 1,
+indicating a two-dimensional workload.
 
 The shader itself is a simple demonstration shader that generates a gradient based on the
-global invocation ID—a unique identifier for each thread across all workgroups. To add a visual
-distinction, if the local invocation ID (the thread's position within its workgroup) is 0 on
-either the X or Y axis, the shader outputs black. This creates a grid pattern in the resulting
-image, where the black lines highlight the boundaries between workgroups, making it easy to
-visualize how the shader's thread groups are invoked.
+`dispatchThreadID`—a unique identifier for each thread across all workgroups. To add a visual
+distinction, if the `groupThreadID` (the thread's position within its workgroup) is 0 on either
+the X or Y axis, the shader outputs black. This creates a grid pattern in the resulting image,
+where the black lines highlight the boundaries between workgroups, making it easy to visualize
+how the shader's thread groups are invoked.
 
-## GLSL to SPIR-V
+## Slang to SPIR-V
 
-The Vulkan SDK includes a tool called `glslc`, a compiler that converts GLSL (OpenGL Shading
-Language) source code into SPIR-V, the binary format required by Vulkan for executing shaders
-on the GPU.
+The Vulkan SDK includes a tool called `slangc`, a compiler that converts [Slang Shading
+Language][] source code into **SPIR-V**, the binary format required by Vulkan for executing
+shaders on the GPU.
 
-In the `odin-vk-guide` codebase, the `/shaders/source/` directory contains two helper scripts:
-`compile.bat` (for Windows) and `compile.sh` (for Unix-based systems). These scripts simplify
-the process of compiling shaders for this tutorial. To generate the necessary SPIR-V files,
-you’ll need to run the appropriate script for your platform whenever you modify or add shaders.
+[Slang Shading Language]: https://shader-slang.org/
+
+In the [odin-vk-guide][] codebase, the `/shaders/source/` directory contains two helper
+scripts: `compile.bat` (for Windows) and `compile.sh` (for Unix-based systems). These scripts
+simplify the process of compiling shaders for this tutorial. To generate the necessary SPIR-V
+files, you’ll need to run the appropriate script for your platform whenever you modify or add
+shaders.
+
+[odin-vk-guide]: https://github.com/Capati/odin-vk-guide
 
 Before running `compile.sh` on Unix for the first time, you'll need to make it executable:
 
@@ -100,27 +104,32 @@ When you run this command, the script will:
 This is especially useful during development, as it eliminates the need to manually re-run the
 script after every change.
 
-### Manual Compilation with `glslc`
+### Manual Compilation With `slangc`
 
-If you prefer to compile shaders manually, you can use glslc directly. Here’s the basic syntax:
-
-- On Windows:
-
-  ```bash
-  glslc.exe .\gradient.comp -o .\gradient.comp.spv
-  ```
-
-- On Unix-based systems:
+If you prefer to compile shaders manually, you can use `slangc` directly. Here’s the basic
+syntax:
 
   ```bash
-  glslc ./gradient.comp -o ./gradient.comp.spv
+  slangc gradient.comp.slang -entry main -profile glsl_450 -target spirv -o gradient.comp.spv
   ```
 
-In these examples:
+Command breakdown:
 
-- `gradient.comp` is the input GLSL shader file.
-- `-o` specifies the output file, `gradient.comp.spv`, which will contain the compiled SPIR-V
-  code.
+- `slangc` - Runs the Slang compiler (using it from the system PATH)
+- `gradient.comp.slang` - The input Slang source file to be compiled
+- `-entry main` - Specifies the entry point function name
+  - The compiler will look for a function named `main` as the shader entry point. In our
+    shaders, we will always use `main` as the entry point
+    - For compute shaders, this function is decorated with `[shader("compute")]`.
+- `-profile glsl_450` - Specifies **GLSL 4.50** as the shader model/language version
+  - This tells the compiler to follow GLSL 4.50 language rules and feature set
+  - This profile is compatible with Vulkan
+- `-target spirv` - Outputs the shader as SPIR-V binary code
+  - SPIR-V is Vulkan's shader binary format
+  - This produces a binary file that can be loaded directly by Vulkan
+- `-o gradient.comp.spv` - Specifies the output file name and location
+  - The compiled SPIR-V binary will be written to `gradient.comp.spv`
+  - The `.spv` extension is standard for SPIR-V shader binary files
 
 ## Setting Up The Descriptor Layout
 

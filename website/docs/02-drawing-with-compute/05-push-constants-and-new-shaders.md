@@ -30,42 +30,50 @@ shaders at runtime to test them.
 The shader we are going to use to demonstrate pushconstants is this. It will blend between 2
 colors by Y coordinate, making a vertical gradient.
 
-```glsl title="/shaders/source/gradient_color.comp"
-#version 460
+```hlsl title="/shaders/source/gradient_color.comp.slang"
+struct PushConstants
+{
+    float4 data1;
+    float4 data2;
+    float4 data3;
+    float4 data4;
+};
 
-layout(local_size_x = 16, local_size_y = 16) in;
+[[vk_push_constant]]
+PushConstants push_constants;
 
-layout(rgba16f, set = 0, binding = 0) uniform image2D image;
+RWTexture2D<float4> image;
 
-// push constants block
-layout(push_constant) uniform constants {
-    vec4 data1;
-    vec4 data2;
-    vec4 data3;
-    vec4 data4;
-}
-PushConstants;
+[shader("compute")]
+[numthreads(16, 16, 1)]
+void main(uint3 globalID: SV_DispatchThreadID)
+{
+    uint2 texelCoord = globalID.xy;
 
-void main() {
-    ivec2 texelCoord = ivec2(gl_GlobalInvocationID.xy);
+    uint2 size;
+    image.GetDimensions(size.x, size.y);
 
-    ivec2 size = imageSize(image);
+    float4 topColor = push_constants.data1;
+    float4 bottomColor = push_constants.data2;
 
-    vec4 topColor = PushConstants.data1;
-    vec4 bottomColor = PushConstants.data2;
+    if (texelCoord.x < size.x && texelCoord.y < size.y)
+    {
+        float blend = float(texelCoord.y) / float(size.y);
 
-    if (texelCoord.x < size.x && texelCoord.y < size.y) {
-        float blend = float(texelCoord.y) / (size.y);
-
-        imageStore(image, texelCoord, mix(topColor, bottomColor, blend));
+        image[texelCoord] = lerp(topColor, bottomColor, blend);
     }
 }
 ```
 
 Its mostly the same as the gradient shader we had from last article. We have added a **push
-constant block** containing 4 `vec4`s, and we are loading top and bottom color from it. `data3`
-and `data4` are not used, but we have them in there to avoid the validation layers complaining
-that we have a push-constants range larger than we have in the shader.
+constant block** that is defined using a `struct` named `PushConstants`, which contains four
+`float4` members: `data1`, `data2`, `data3`, and `data4`, and we are loading top and bottom
+color from it. `data3` and `data4` are not used, but we have them in there to avoid the
+validation layers complaining that we have a push-constants range larger than we have in the
+shader. The `[[vk_push_constant]]` **attribute** precedes the declaration of the `push_constants`
+variable, explicitly marking it as a push constant block in the Slang syntax. This attribute
+ensures that the Vulkan backend maps this structure to the push constant memory space when the
+shader is compiled to SPIR-V.
 
 We now need to change the pipeline layout creation to configure the pushconstants range. Lets
 first create a structure that mirrors those pushconstants directly into `engine.odin`.

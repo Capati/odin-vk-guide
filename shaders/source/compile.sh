@@ -6,9 +6,11 @@ if [ -z "$VULKAN_SDK" ]; then
     exit 1
 fi
 
-# Check if glslc exists
-if [ ! -f "$VULKAN_SDK/bin/glslc" ]; then
-    echo "Error: glslc not found in $VULKAN_SDK/bin"
+COMPILER=$VULKAN_SDK/bin/slangc
+
+# Check if slangc exists
+if [ ! -f "$COMPILER" ]; then
+    echo "Error: slangc not found in $VULKAN_SDK/bin"
     exit 1
 fi
 
@@ -26,11 +28,13 @@ echo "Compiling all shaders..."
 count=0
 errors=0
 
-find . -type f \( -name "*.frag" -o -name "*.vert" -o -name "*.comp" \) | while read -r file; do
+COMMON_ARGS="-entry main -profile glsl_450 -target spirv"
+
+find . -type f \( -name "*.slang" \) | while read -r file; do
     filename=$(basename "$file")
     echo "Compiling: $filename"
 
-    "$VULKAN_SDK/bin/glslc" "$file" -o "../compiled/$(basename "$file").spv"
+    "$COMPILER" "$file" $COMMON_ARGS -o "../compiled/$(basename "$file").spv"
 
     if [ $? -ne 0 ]; then
         echo "Failed to compile $filename"
@@ -61,7 +65,7 @@ hash_dir="/tmp/shader_watch"
 mkdir -p "$hash_dir"
 
 # Store initial state of each file
-find . -type f \( -name "*.frag" -o -name "*.vert" -o -name "*.comp" \) | while read -r file; do
+find . -type f \( -name "*.slang" \) | while read -r file; do
     filename=$(basename "$file")
     stat -c "%s%Y" "$file" > "$hash_dir/$filename.hash"
 done
@@ -70,7 +74,7 @@ done
 while true; do
     changes=0
 
-    find . -type f \( -name "*.frag" -o -name "*.vert" -o -name "*.comp" \) | while read -r file; do
+    find . -type f \( -name "*.slang" \) | while read -r file; do
         filename=$(basename "$file")
         current_hash=$(stat -c "%s%Y" "$file")
         stored_hash=$(cat "$hash_dir/$filename.hash")
@@ -79,7 +83,7 @@ while true; do
             echo "Change detected in: $filename"
             echo "Compiling: $filename"
 
-            "$VULKAN_SDK/bin/glslc" "$file" -o "../compiled/$filename.spv"
+            "$VULKAN_SDK/bin/slangc" "$file" -o "../compiled/$filename.spv"
 
             if [ $? -ne 0 ]; then
                 echo "Failed to compile $filename"

@@ -7,9 +7,11 @@ if "%VULKAN_SDK%" == "" (
     exit /b 1
 )
 
-:: Check if glslc exists
-if not exist "%VULKAN_SDK%\Bin\glslc.exe" (
-    echo Error: glslc.exe not found in %VULKAN_SDK%\Bin
+set "COMPILER=%VULKAN_SDK%\Bin\slangc.exe"
+
+:: Check if slangc exists in Vulkan SDK
+if not exist "%COMPILER%" (
+    echo Error: slangc.exe not found in %VULKAN_SDK%\Bin
     exit /b 1
 )
 
@@ -22,9 +24,11 @@ echo Compiling all shaders...
 set "count=0"
 set "errors=0"
 
-for /r %%i in (*.frag *.vert *.comp) do (
+set "COMMON_ARGS=-entry main -profile glsl_450 -target spirv"
+
+for /r %%i in (*.slang) do (
     echo Compiling: %%~nxi
-    %VULKAN_SDK%\Bin\glslc.exe "%%i" -o "..\compiled\%%~ni%%~xi.spv"
+    call %COMPILER% "%%i" %COMMON_ARGS% -o "..\compiled\%%~ni.spv"
     if !errorlevel! neq 0 (
         echo Failed to compile %%~nxi
         set /a "errors+=1"
@@ -52,7 +56,7 @@ set "hash_dir=%TEMP%\shader_watch"
 if not exist "%hash_dir%" mkdir "%hash_dir%"
 
 :: Store initial state of each file
-for /r %%i in (*.frag *.vert *.comp) do (
+for /r %%i in (*.slang) do (
     echo %%~zi%%~ti>"%hash_dir%\%%~ni%%~xi.hash"
 )
 
@@ -60,14 +64,14 @@ for /r %%i in (*.frag *.vert *.comp) do (
 set "changes=0"
 
 :: Check each file for changes
-for /r %%i in (*.frag *.vert *.comp) do (
+for /r %%i in (*.slang) do (
     set "current_hash=%%~zi%%~ti"
     set /p stored_hash=<"%hash_dir%\%%~ni%%~xi.hash"
 
     if not "!current_hash!"=="!stored_hash!" (
         echo Change detected in: %%~nxi
         echo Compiling: %%~nxi
-        %VULKAN_SDK%\Bin\glslc.exe "%%i" -o "..\compiled\%%~ni%%~xi.spv"
+    	call %COMPILER% "%%i" %COMMON_ARGS% -o "..\compiled\%%~ni.spv"
         if !errorlevel! neq 0 (
             echo Failed to compile %%~nxi
         ) else (

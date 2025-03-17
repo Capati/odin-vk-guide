@@ -5,7 +5,7 @@ sidebar_label: "Vulkan Shaders"
 
 # Vulkan Shaders
 
-## Running code on the GPU
+## Running Code On The GPU
 
 We have the render loop implemented now, so the next step is to draw something.
 
@@ -29,23 +29,22 @@ way.
 ## `vk.ShaderModule`
 
 A `vk.ShaderModule` is a processed shader file. We create it from a pre-compiled SPIR-V file.
-In vulkan, unlike in OpenGL, the driver does not accept shader code in GLSL directly. There are
-extensions that allow it, but its not standard. So we need to compile our GLSL files ahead of
-time into a compiled SPIR-V file. As part of the vulkan SDK, we have the `glslc` program, which
-is used to compile GLSL into SPIR-V.
+We will be using **Slang** that targets `GLSL`. However, in vulkan, unlike in OpenGL, the driver
+does not accept shader code in GLSL directly. There are extensions that allow it, but its not
+standard. So we need to compile our slang files ahead of time into a compiled SPIR-V file. As
+part of the **Vulkan SDK**, we have the `slangc` program, which is used to compile Slang into
+SPIR-V.
+
+Learn more about the [Slang Shading Language] and Compiler.
+
+[Slang Shading Language]: https://shader-slang.org/
 
 To compile the shaders used in this tutorial, navigate to the `/shaders/source/` directory. You
 will find scripts named `compile.bat` for Windows and `compile.sh` for Unix systems. Run the
 appropriate script for your operating system to compile all shader files. Whenever you need to
 compile the shaders, simply execute the corresponding script to build them.
 
-It is also possible to use HLSL instead of GLSL to code Vulkan shaders. A lot of projects like
-doing that, but we wont be doing it as part of this tutorial. If you want to look at how to do
-that, you can check in this official vulkan site [HLSL In Vulkan][].
-
-[HLSL In Vulkan]: https://docs.vulkan.org/guide/latest/hlsl.html
-
-## Descriptor sets
+## Descriptor Sets
 
 To give data to the shaders, we need to setup some bindings. In vulkan, binding objects like
 images and buffers to the shader requires Descriptor Sets. Think of a single descriptor as a

@@ -587,62 +587,78 @@ The shader needs to change for our vertex buffer, so while we are still going to
 data from the push-constants. We will create that shader as `colored_triangle_mesh.vert`, as it
 will be the same as the hardcoded triangle.
 
-```glsl
-#version 450
-#extension GL_EXT_buffer_reference : require
+```hlsl title="/shaders/source/colored_triangle_mesh.vert.slang"
+struct VSOutput
+{
+    float4 pos : SV_Position;
+    [vk_location(0)]
+    float3 color : COLOR0;
+    [vk_location(1)]
+    float2 uv : TEXCOORD0;
+};
 
-layout(location = 0) out vec3 outColor;
-layout(location = 1) out vec2 outUV;
-
-struct Vertex {
-
-    vec3 position;
+struct Vertex
+{
+    float3 position;
     float uv_x;
-    vec3 normal;
+    float3 normal;
     float uv_y;
-    vec4 color;
+    float4 color;
 };
 
-layout(buffer_reference, std430) readonly buffer VertexBuffer {
-    Vertex vertices[];
+struct PushConstants
+{
+    float4x4 render_matrix;
+    Vertex *vertex_buffer;
 };
 
-// push constants block
-layout(push_constant) uniform constants {
-    mat4 render_matrix;
-    VertexBuffer vertexBuffer;
-} PushConstants;
+[vk_push_constant]
+PushConstants push_constants;
 
-void main() {
-    // load vertex data from device adress
-    Vertex v = PushConstants.vertexBuffer.vertices[gl_VertexIndex];
+[shader("vertex")]
+VSOutput main(uint vertex_index: SV_VertexID)
+{
+    Vertex v = push_constants.vertex_buffer[vertex_index];
 
-    // output data
-    gl_Position = PushConstants.render_matrix * vec4(v.position, 1.0f);
-    outColor = v.color.xyz;
-    outUV.x = v.uv_x;
-    outUV.y = v.uv_y;
+    VSOutput output;
+    output.pos = mul(push_constants.render_matrix, float4(v.position, 1.0));
+    output.color = v.color.xyz;
+    output.uv.x = v.uv_x;
+    output.uv.y = v.uv_y;
+
+    return output;
 }
 ```
 
-We need to enable the `GL_EXT_buffer_reference` extension so that the shader compiler knows how
-to handle these buffer references.
+In this Slang shader, we're working with a vertex buffer provided from the CPU side instead of
+hardcoding our vertices.
 
-Then we have the `Vertex` struct, which is the exact same one as the one we have on CPU.
+The `Vertex` struct is defined identically to match the struct we have on the CPU side,
+ensuring memory layout compatibility.
 
-After that, we declare the `VertexBuffer`, which is a readonly buffer that has an array (unsized)
-of `Vertex` structures. by having the `buffer_reference` in the layout, that tells the shader
-that this object is used from buffer adress. `std430` is the alignement rules for the
-structure.
+We're leveraging Slang's pointer capabilities. This allows us to pass a pointer to our vertex
+buffer via push constants rather than binding a dedicated vertex buffer.
 
-We have our `push_constant` block which holds a single instance of our `VertexBuffer`, and a
-matrix. Because the vertex buffer is declared as `buffer_reference`, this is a `uint64` handle,
-while the matrix is a normal matrix (no references).
+The `PushConstants` struct contains:
 
-From our `main()`, we index the vertex array using `gl_VertexIndex`, same as we did with the
-hardcoded array. We dont have -> like in cpp when accessing pointers, in GLSL buffer address is
-accessed as a reference so it uses `.` to access it. With the vertex grabbed, we just output
-the color and position we want, multiplying the position with the render matrix.
+1. A transformation matrix (`render_matrix`)
+2. A pointer to the vertex buffer (`vertex_buffer`)
+
+With the `[vk_push_constant]` attribute, we tell Slang that this data will be provided through
+Vulkan push constants, making it quickly accessible in the shader.
+
+In our main function, we:
+
+1. Use the `vertex_index` to access the appropriate vertex from our buffer
+2. Transform the vertex position using the provided matrix with the `mul` function
+3. Pass through the color from the vertex data
+4. Construct UV coordinates from the separate x and y components in our vertex structure
+
+Unlike GLSL where buffer addresses use dot notation regardless of being pointers, Slang follows
+HLSL conventions where we use array indexing syntax to dereference our vertex buffer pointer.
+
+This shader allows us to efficiently process any number of vertices from a buffer provided by
+the CPU, rather than being limited to hardcoded vertices as in our previous example.
 
 Lets create the pipeline now. We will create a new pipeline procedure, separate from
 `engine_init_triangle_pipeline()` but almost the same.

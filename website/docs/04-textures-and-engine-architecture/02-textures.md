@@ -382,33 +382,45 @@ descriptor to make our shaders simpler.
 
 We will be modifying the rectangle draw we had before into a draw that displays a image in that
 rectangle. We need to create a new fragment shader that will show the image. Lets create a new
-fragment shader for that. We will call it `tex_image.frag`.
+fragment shader for that. We will call it `tex_image.frag.slang`.
 
-```glsl title="/shaders/source/tex_image.frag"
-//glsl version 4.5
-#version 450
+```hlsl title="/shaders/source/tex_image.frag.slang"
+struct PSInput
+{
+    [vk_location(0)]
+    float3 color : COLOR;
+    [vk_location(1)]
+    float2 uv : TEXCOORD0;
+};
 
-// Shader input
-layout (location = 0) in vec3 inColor;
-layout (location = 1) in vec2 inUV;
+struct PSOutput
+{
+    [vk_location(0)]
+    float4 color : COLOR0;
+};
 
-// Output write
-layout (location = 0) out vec4 outFragColor;
+[[vk::binding(0, 0)]]
+Sampler2D display_texture;
 
-layout(set =0, binding = 0) uniform sampler2D displayTexture;
-
-void main() {
-    outFragColor = texture(displayTexture,inUV);
+[shader("fragment")]
+PSOutput main(PSInput input)
+{
+    PSOutput output;
+    output.color = display_texture.Sample(input.uv);
+    return output;
 }
-
 ```
 
-We have 2 inputs to the fragment shader, color and UV. The shader doesnt use color but we want
-to keep using the same vertex shader we had before.
+The shader receives two inputs from the vertex shader:
 
-To sample a texture, you do `texture( textureSampler, coordinates )`. There are other
-procedures for things like directly accessing a given pixel. The texture object is declared as
-`uniform sampler2D`.
+- A `color` value at location `0`, which isn't used in this shader but is kept for compatibility
+  with our previous vertex shader
+- `uv` coordinates at location `1`, which we'll use for texture sampling
+
+To sample a texture, you do `display_texture.Sample(input.uv)`. There are other functions for
+things like directly accessing a given pixel. Unlike GLSL where you would use
+`texture(textureSampler, coordinates)`, Slang follows HLSL's object-oriented syntax with the
+`Sample()` method. The texture object is declared as `Sampler2D display_texture`.
 
 This does change our pipeline layout, so we are going to need to update it too.
 

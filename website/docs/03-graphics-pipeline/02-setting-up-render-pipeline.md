@@ -470,57 +470,78 @@ output will be a pure color.
 
 These are the shaders:
 
-```glsl title="/shaders/source/colored_triangle.vert"
-#version 450
-
-layout (location = 0) out vec3 outColor;
-
-void main() 
+```hlsl title="/shaders/source/colored_triangle.vert.slang"
+struct VSOutput
 {
-    //const array of positions for the triangle
-    const vec3 positions[3] = vec3[3](
-        vec3(1.f,1.f, 0.0f),
-        vec3(-1.f,1.f, 0.0f),
-        vec3(0.f,-1.f, 0.0f)
+    float4 pos : SV_Position;
+    [vk_location(0)]
+    float3 color : COLOR0;
+};
+
+[shader("vertex")]
+VSOutput main(uint vertex_index: SV_VertexID)
+{
+    let positions = float3[3](
+        float3(1.f, 1.f, 0.0f),
+        float3(-1.f, 1.f, 0.0f),
+        float3(0.f, -1.f, 0.0f));
+
+    // Array of colors for the triangle
+    let colors = float3[3](
+        float3(1.0f, 0.0f, 0.0f), // red
+        float3(0.0f, 1.0f, 0.0f), // green
+        float3(0.0f, 0.0f, 1.0f)  // blue
     );
 
-    //const array of colors for the triangle
-    const vec3 colors[3] = vec3[3](
-        vec3(1.0f, 0.0f, 0.0f), //red
-        vec3(0.0f, 1.0f, 0.0f), //green
-        vec3(00.f, 0.0f, 1.0f)  //blue
-    );
+    VSOutput output;
 
-    //output the position of each vertex
-    gl_Position = vec4(positions[gl_VertexIndex], 1.0f);
-    outColor = colors[gl_VertexIndex];
+    output.pos = float4(positions[vertex_index], 1.0f);
+    output.color = colors[vertex_index];
+
+    return output;
 }
 ```
 
-```glsl title="/shaders/source/colored_triangle.frag"
-#version 450
-
-//shader input
-layout (location = 0) in vec3 inColor;
-
-//output write
-layout (location = 0) out vec4 outFragColor;
-
-void main() 
+```hlsl title="/shaders/source/colored_triangle.frag.slang"
+struct PSInput
 {
-    //return red
-    outFragColor = vec4(inColor,1.0f);
+    [vk_location(0)]
+    float3 color : COLOR0;
+};
+
+struct PSOutput
+{
+    [vk_location(0)]
+    float4 frag_color : COLOR0;
+};
+
+[shader("fragment")]
+PSOutput main(PSInput input)
+{
+    PSOutput output;
+    output.frag_color = float4(input.color, 1.f);
+
+    return output;
 }
 ```
 
-In our vertex shader, we have a hardcoded array of positions, and we index into it from
-`gl_VertexIndex`. This works in a similar way to `LocalThreadID` on compute shaders worked. For
-every invocation of the vertex shader, this will be a different index, and we can use it to
-process out vertex, which will write into the fixed function gl_Position variable. As the array
-is only of length 3, if we tried to render more than 3 vertices (1 triangle) this will error.
+In our Slang vertex shader, we're working with a hardcoded array of positions and colors to
+create a colored triangle. The shader function is marked with `[shader("vertex")]` to indicate
+its type.
 
-In our fragment shader, we will declare an output at `layout = 0` (this connects to the render
-attachments of the render pass), and we have a simple hardcoded red output.
+For each vertex shader invocation, we use the `vertex_index` to access the corresponding
+position and color from our arrays. This parameter automatically increments for each vertex
+processed, similar to how `LocalThreadID` works in compute shaders.
+
+The shader outputs both position (tagged with `SV_Position`) and color (with a custom Vulkan
+location specified by `[vk_location(0)]`). Since we only defined three vertices, attempting to
+render more than one triangle would cause an error.
+
+In our fragment shader (marked with `[shader("fragment")]`), we take the interpolated color
+from the vertex shader as input. We then output a 4-component color vector at the same Vulkan
+location (0), which connects to the render attachments in the render pass. We simply pass
+through the interpolated color from the vertex shader and add an alpha value of 1.0 for full
+opacity.
 
 Lets now create the pipeline and layout we need to draw this triangle.
 
