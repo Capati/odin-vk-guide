@@ -13,14 +13,15 @@ reference to help you if you get stuck.
 - [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) - provides essential components for Vulkan
   development
   - The SDK is installed globally, making it accessible across different development
-    environments.
-  - Check the installation by running the `vkcube` application.
+    environments
+  - Includes the `slangc` compiler for shader compilation
+  - Check the installation and hardware compatibility by running the `vkcube` application
 - [Premake5](https://premake.github.io) - the build configuration to help compile external
   libraries
   - You can download the [Pre-Built Binaries](https://premake.github.io/download), simply
     need to be unpacked and placed somewhere on the system search path or any other
-    convenient location.
-  - For Unix, also requires **GNU libc 2.38**.
+    convenient location
+  - For Unix, also requires **GNU libc 2.38**
 - [Git](http://git-scm.com/downloads) - required for the companion Git project and to clone
 library dependencies
 - C++ compiler - `vs2022` on Windows or `g++/clang` on Unix
