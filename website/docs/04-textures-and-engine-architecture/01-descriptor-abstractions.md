@@ -680,9 +680,9 @@ GPU_Scene_Data :: struct {
     view:               la.Matrix4x4f32,
     proj:               la.Matrix4x4f32,
     viewproj:           la.Matrix4x4f32,
-    ambient_color:      la.Vector3f32,
-    sunlight_direction: la.Vector3f32, // w for sun power
-    sunlight_color:     la.Vector3f32,
+    ambient_color:      la.Vector4f32,
+    sunlight_direction: la.Vector4f32, // w for sun power
+    sunlight_color:     la.Vector4f32,
 }
 ```
 
