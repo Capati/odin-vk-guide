@@ -18,6 +18,8 @@ engine_get_current_frame :: #force_inline proc(self: ^Engine) -> ^Frame_Data #no
 
 // Draw loop.
 engine_draw :: proc(self: ^Engine) -> (ok: bool) {
+	engine_update_scene(self)
+
 	// Steps:
 	//
 	// 1. Waits for the GPU to finish the previous frame
@@ -281,8 +283,6 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
 	render_info := rendering_info(self.draw_extent, &color_attachment, &depth_attachment)
 	vk.CmdBeginRendering(cmd, &render_info)
 
-	frame := engine_get_current_frame(self)
-
 	vk.CmdBindPipeline(cmd, .GRAPHICS, self.mesh_pipeline)
 
 	// Set dynamic viewport and scissor
@@ -304,63 +304,7 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
 
 	vk.CmdSetScissor(cmd, 0, 1, &scissor)
 
-	// Bind a texture
-	image_set := descriptor_growable_allocate(
-		&frame.frame_descriptors,
-		&self.single_image_descriptor_layout,
-	) or_return
-
-	{
-		writer: Descriptor_Writer
-		descriptor_writer_init(&writer, self.vk_device)
-		descriptor_writer_write_image(
-			&writer,
-			binding = 0,
-			image = self.error_checkerboard_image.image_view,
-			sampler = self.default_sampler_nearest,
-			layout = .SHADER_READ_ONLY_OPTIMAL,
-			type = .COMBINED_IMAGE_SAMPLER,
-		)
-		descriptor_writer_update_set(&writer, image_set)
-	}
-
-	vk.CmdBindDescriptorSets(cmd, .GRAPHICS, self.mesh_pipeline_layout, 0, 1, &image_set, 0, nil)
-
-	// Create view matrix - place camera at positive Z looking at origin
-	view := la.matrix4_translate_f32({0, 0, -5})
-
-	// Create infinite perspective projection matrix with REVERSED depth
-	projection := matrix4_perspective_reverse_z_f32(
-		f32(la.to_radians(70.0)),
-		f32(self.draw_extent.width) / f32(self.draw_extent.height),
-		0.1,
-		true, // Invert the Y direction to match OpenGL and glTF axis conventions
-	)
-
-	// Monkey - ensure matrix order matches shader expectations
-	push_constants := GPU_Draw_Push_Constants {
-		world_matrix  = projection * view,
-		vertex_buffer = self.test_meshes[2].mesh_buffers.vertex_buffer_address,
-	}
-
-	vk.CmdPushConstants(
-		cmd,
-		self.mesh_pipeline_layout,
-		{.VERTEX},
-		0,
-		size_of(GPU_Draw_Push_Constants),
-		&push_constants,
-	)
-	vk.CmdBindIndexBuffer(cmd, self.test_meshes[2].mesh_buffers.index_buffer.buffer, 0, .UINT32)
-
-	vk.CmdDrawIndexed(
-		cmd,
-		self.test_meshes[2].surfaces[0].count,
-		1,
-		self.test_meshes[2].surfaces[0].start_index,
-		0,
-		0,
-	)
+	frame := engine_get_current_frame(self)
 
 	// Allocate a new uniform buffer for the scene data
 	gpu_scene_data_buffer := create_buffer(
@@ -395,7 +339,143 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
 	)
 	descriptor_writer_update_set(&writer, global_descriptor)
 
+	// Draw all opaque surfaces
+	for &draw in self.main_draw_context.opaque_surfaces {
+		vk.CmdBindPipeline(cmd, .GRAPHICS, draw.material.pipeline.pipeline)
+		vk.CmdBindDescriptorSets(
+			cmd,
+			.GRAPHICS,
+			draw.material.pipeline.layout,
+			0,
+			1,
+			&global_descriptor,
+			0,
+			nil,
+		)
+		vk.CmdBindDescriptorSets(
+			cmd,
+			.GRAPHICS,
+			draw.material.pipeline.layout,
+			1,
+			1,
+			&draw.material.material_set,
+			0,
+			nil,
+		)
+
+		vk.CmdBindIndexBuffer(cmd, draw.index_buffer, 0, .UINT32)
+
+		push_constants := GPU_Draw_Push_Constants {
+			vertex_buffer = draw.vertex_buffer_address,
+			world_matrix  = draw.transform,
+		}
+
+		vk.CmdPushConstants(
+			cmd,
+			draw.material.pipeline.layout,
+			{.VERTEX},
+			0,
+			size_of(GPU_Draw_Push_Constants),
+			&push_constants,
+		)
+
+		vk.CmdDrawIndexed(cmd, draw.index_count, 1, draw.first_index, 0, 0)
+	}
+
 	vk.CmdEndRendering(cmd)
 
 	return true
+}
+
+// Render object that holds drawing data.
+Render_Object :: struct {
+	index_count:           u32,
+	first_index:           u32,
+	index_buffer:          vk.Buffer,
+	material:              ^Material_Instance,
+	transform:             la.Matrix4f32,
+	vertex_buffer_address: vk.DeviceAddress,
+}
+
+// Define our base drawing context and renderable types.
+Draw_Context :: struct {
+	opaque_surfaces: [dynamic]Render_Object,
+}
+
+// Base "interface" for renderable dynamic object.
+Renderable :: struct {
+	draw: proc(self: ^Renderable, top_matrix: la.Matrix4f32, ctx: ^Draw_Context),
+}
+
+// Structure that can hold children and propagate transforms.
+Node :: struct {
+	using renderable: Renderable,
+	parent:           ^Node,
+	children:         [dynamic]^Node,
+	local_transform:  la.Matrix4x4f32,
+	world_transform:  la.Matrix4x4f32,
+}
+
+// Initialize a node.
+node_init :: proc(node: ^Node) {
+	node.local_transform = la.MATRIX4F32_IDENTITY
+	node.world_transform = la.MATRIX4F32_IDENTITY
+	node.draw = node_draw
+}
+
+// Updates the world transform of this node and all children.
+node_refresh_transform :: proc(node: ^Node, parent_matrix: la.Matrix4x4f32) {
+	node.world_transform = la.matrix_mul(parent_matrix, node.local_transform)
+	// Recursively update all children
+	for &child in node.children {
+		node_refresh_transform(child, node.world_transform)
+	}
+}
+
+// Default draw implementation for nodes. Only draws children, serves as base behavior.
+node_draw :: proc(self: ^Renderable, top_matrix: la.Matrix4x4f32, ctx: ^Draw_Context) {
+	node := cast(^Node)self
+	// Iterate through and draw all child nodes
+	for &child in node.children {
+		child.draw(cast(^Renderable)child, top_matrix, ctx)
+	}
+}
+
+// Mesh node that holds a mesh asset and can be drawn.
+Mesh_Node :: struct {
+	using node: Node,
+	mesh:       ^Mesh_Asset,
+}
+
+// Initialize a mesh node.
+mesh_node_init :: proc(mesh_node: ^Mesh_Node) {
+	node_init(cast(^Node)mesh_node)
+	mesh_node.draw = mesh_node_draw
+}
+
+// Draw implementation for mesh nodes.
+// Converts mesh data into render objects for the renderer.
+mesh_node_draw :: proc(self: ^Renderable, top_matrix: la.Matrix4x4f32, ctx: ^Draw_Context) {
+	mesh_node := cast(^Mesh_Node)self
+
+	// Combine top matrix with node's world transform
+	node_matrix := la.matrix_mul(top_matrix, mesh_node.world_transform)
+
+	// Add render objects for each surface
+	for &surface in mesh_node.mesh.surfaces {
+		def := Render_Object {
+			index_count           = surface.count,
+			first_index           = surface.start_index,
+			index_buffer          = mesh_node.mesh.mesh_buffers.index_buffer.buffer,
+			material              = &surface.material.data,
+			transform             = node_matrix,
+			vertex_buffer_address = mesh_node.mesh.mesh_buffers.vertex_buffer_address,
+		}
+
+		// Add the render object to the context's opaque surfaces list
+		append(&ctx.opaque_surfaces, def)
+	}
+
+	// Call parent draw to process children
+	node_draw(self, top_matrix, ctx)
 }

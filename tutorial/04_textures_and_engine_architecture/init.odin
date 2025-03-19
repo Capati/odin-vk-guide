@@ -77,6 +77,13 @@ engine_cleanup :: proc(self: ^Engine) {
 	// Make sure the gpu has stopped doing its things
 	ensure(vk.DeviceWaitIdle(self.vk_device) == .SUCCESS)
 
+	// Clean up scene nodes
+	delete(self.main_draw_context.opaque_surfaces)
+	for _, &node in self.loaded_nodes {
+		free(node)
+	}
+	delete(self.loaded_nodes)
+
 	for &frame in self.frames {
 		vk.DestroyCommandPool(self.vk_device, frame.command_pool, nil)
 
@@ -487,7 +494,7 @@ engine_init_sync_structures :: proc(self: ^Engine) -> (ok: bool) {
 
 engine_init_descriptors :: proc(self: ^Engine) -> (ok: bool) {
 	// Create a descriptor pool that will hold 10 sets with 1 image each
-	sizes := []Pool_Size_Ratio{{.STORAGE_IMAGE, 1}}
+	sizes := []Pool_Size_Ratio{{.STORAGE_IMAGE, 1}, {.UNIFORM_BUFFER, 1}}
 
 	descriptor_allocator_init_pool(
 		&self.global_descriptor_allocator,
@@ -497,8 +504,8 @@ engine_init_descriptors :: proc(self: ^Engine) -> (ok: bool) {
 	) or_return
 	deletion_queue_push(&self.main_deletion_queue, self.global_descriptor_allocator.pool)
 
+	// Make the descriptor set layout for our compute draw
 	{
-		// Make the descriptor set layout for our compute draw
 		builder: Descriptor_Layout_Builder
 		descriptor_layout_builder_init(&builder, self.vk_device)
 		descriptor_layout_builder_add_binding(&builder, 0, .STORAGE_IMAGE)
@@ -509,28 +516,34 @@ engine_init_descriptors :: proc(self: ^Engine) -> (ok: bool) {
 	}
 	deletion_queue_push(&self.main_deletion_queue, self.draw_image_descriptor_layout)
 
+	{
+		builder: Descriptor_Layout_Builder
+		descriptor_layout_builder_init(&builder, self.vk_device)
+		descriptor_layout_builder_add_binding(&builder, 0, .UNIFORM_BUFFER)
+		self.gpu_scene_data_descriptor_layout = descriptor_layout_builder_build(
+			&builder,
+			{.VERTEX, .FRAGMENT},
+		) or_return
+	}
+	deletion_queue_push(&self.main_deletion_queue, self.gpu_scene_data_descriptor_layout)
+
+	{
+		builder: Descriptor_Layout_Builder
+		descriptor_layout_builder_init(&builder, self.vk_device)
+		descriptor_layout_builder_add_binding(&builder, 0, .COMBINED_IMAGE_SAMPLER)
+		self.single_image_descriptor_layout = descriptor_layout_builder_build(
+			&builder,
+			{.FRAGMENT},
+		) or_return
+	}
+	deletion_queue_push(&self.main_deletion_queue, self.single_image_descriptor_layout)
+
 	// Allocate a descriptor set for our draw image
 	self.draw_image_descriptors = descriptor_allocator_allocate(
 		&self.global_descriptor_allocator,
 		self.vk_device,
 		&self.draw_image_descriptor_layout,
 	) or_return
-
-	// img_info := vk.DescriptorImageInfo {
-	// 	imageLayout = .GENERAL,
-	// 	imageView   = self.draw_image.image_view,
-	// }
-
-	// draw_image_write := vk.WriteDescriptorSet {
-	// 	sType           = .WRITE_DESCRIPTOR_SET,
-	// 	dstBinding      = 0,
-	// 	dstSet          = self.draw_image_descriptors,
-	// 	descriptorCount = 1,
-	// 	descriptorType  = .STORAGE_IMAGE,
-	// 	pImageInfo      = &img_info,
-	// }
-
-	// vk.UpdateDescriptorSets(self.vk_device, 1, &draw_image_write, 0, nil)
 
 	writer: Descriptor_Writer
 	descriptor_writer_init(&writer, self.vk_device)
@@ -562,28 +575,6 @@ engine_init_descriptors :: proc(self: ^Engine) -> (ok: bool) {
 
 		deletion_queue_push(&self.main_deletion_queue, frame.frame_descriptors)
 	}
-
-	{
-		builder: Descriptor_Layout_Builder
-		descriptor_layout_builder_init(&builder, self.vk_device)
-		descriptor_layout_builder_add_binding(&builder, 0, .UNIFORM_BUFFER)
-		self.gpu_scene_data_descriptor_layout = descriptor_layout_builder_build(
-			&builder,
-			{.VERTEX, .FRAGMENT},
-		) or_return
-	}
-	deletion_queue_push(&self.main_deletion_queue, self.gpu_scene_data_descriptor_layout)
-
-	{
-		builder: Descriptor_Layout_Builder
-		descriptor_layout_builder_init(&builder, self.vk_device)
-		descriptor_layout_builder_add_binding(&builder, 0, .COMBINED_IMAGE_SAMPLER)
-		self.single_image_descriptor_layout = descriptor_layout_builder_build(
-			&builder,
-			{.FRAGMENT},
-		) or_return
-	}
-	deletion_queue_push(&self.main_deletion_queue, self.single_image_descriptor_layout)
 
 	return true
 }
@@ -760,6 +751,9 @@ engine_init_pipelines :: proc(self: ^Engine) -> (ok: bool) {
 	// engine_init_triangle_pipeline(self) or_return
 	engine_init_mesh_pipeline(self) or_return
 
+	metallic_roughness_build_pipelines(&self.metal_rough_material, self) or_return
+	deletion_queue_push(&self.main_deletion_queue, self.metal_rough_material)
+
 	return true
 }
 
@@ -911,6 +905,54 @@ engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
 		vk.CreateSampler(self.vk_device, &sampler_info, nil, &self.default_sampler_linear),
 	) or_return
 	deletion_queue_push(&self.main_deletion_queue, self.default_sampler_linear)
+
+	// DDefault the material textures
+	material_resources := Metallic_Roughness_Resources {
+		color_image         = self.white_image,
+		color_sampler       = self.default_sampler_linear,
+		metal_rough_image   = self.white_image,
+		metal_rough_sampler = self.default_sampler_linear,
+	}
+
+	// Set the uniform buffer for the material data
+	material_constants := create_buffer(
+		self,
+		size_of(Metallic_Roughness_Constants),
+		{.UNIFORM_BUFFER},
+		.Cpu_To_Gpu,
+	) or_return
+	deletion_queue_push(&self.main_deletion_queue, material_constants)
+
+	// Write the buffer
+	scene_uniform_data := cast(^Metallic_Roughness_Constants)material_constants.info.mapped_data
+	scene_uniform_data.color_factors = {1, 1, 1, 1}
+	scene_uniform_data.metal_rough_factors = {1, 0.5, 0, 0}
+
+	material_resources.data_buffer = material_constants.buffer
+	material_resources.data_buffer_offset = 0
+
+	self.default_data = metallic_roughness_write(
+		&self.metal_rough_material,
+		self.vk_device,
+		.Main_Color,
+		&material_resources,
+		&self.global_descriptor_allocator,
+	) or_return
+
+	for &m in self.test_meshes {
+		new_node := new(Mesh_Node)
+		mesh_node_init(new_node)
+		new_node.mesh = m
+
+		// Set default material for all surfaces
+		for &surface in new_node.mesh.surfaces {
+			material: Material
+			material.data = self.default_data
+			surface.material = material
+		}
+
+		self.loaded_nodes[m.name] = cast(^Node)new_node
+	}
 
 	return true
 }

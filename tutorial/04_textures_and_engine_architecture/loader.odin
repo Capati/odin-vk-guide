@@ -8,9 +8,14 @@ import "core:strings"
 // Vendor
 import "vendor:cgltf"
 
+Material :: struct {
+	data: Material_Instance,
+}
+
 Geo_Surface :: struct {
 	start_index: u32,
 	count:       u32,
+	material:    Material,
 }
 
 Mesh_Asset :: struct {
@@ -22,7 +27,7 @@ Mesh_Asset :: struct {
 Mesh_Asset_List :: [dynamic]^Mesh_Asset
 
 // Override the vertex colors with the vertex normals which is useful for debugging.
-OVERRIDE_VERTEX_COLORS :: #config(OVERRIDE_VERTEX_COLORS, true)
+OVERRIDE_VERTEX_COLORS :: #config(OVERRIDE_VERTEX_COLORS, false)
 
 // Loads 3D mesh data from a glTF file and upload to the GPU.
 load_gltf_meshes :: proc(
