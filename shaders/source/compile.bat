@@ -1,9 +1,16 @@
 @echo off
-setlocal enabledelayedexpansion
+setLocal enableDelayedExpansion
 
-:: Check if VULKAN_SDK is set
+:: First check if slangc is already in PATH
+where slangc.exe >nul 2>&1
+if %ERRORLEVEL% EQU 0 (
+    set "COMPILER=slangc.exe"
+    goto :continue
+)
+
+:: If not in PATH, check VULKAN_SDK
 if "%VULKAN_SDK%" == "" (
-    echo Error: VULKAN_SDK environment variable is not set
+    echo Error: slangc.exe not found in PATH and VULKAN_SDK environment variable is not set
     exit /b 1
 )
 
@@ -11,9 +18,11 @@ set "COMPILER=%VULKAN_SDK%\Bin\slangc.exe"
 
 :: Check if slangc exists in Vulkan SDK
 if not exist "%COMPILER%" (
-    echo Error: slangc.exe not found in %VULKAN_SDK%\Bin
+    echo Error: slangc.exe not found in PATH or in %VULKAN_SDK%\Bin
     exit /b 1
 )
+
+:continue
 
 :: Check for watch argument
 set "watch_mode=false"
@@ -27,13 +36,20 @@ set "errors=0"
 set "COMMON_ARGS=-entry main -profile glsl_450 -target spirv"
 
 for /r %%i in (*.slang) do (
-    echo Compiling: %%~nxi
-    call %COMPILER% "%%i" %COMMON_ARGS% -o "..\compiled\%%~ni.spv"
+    :: Extract just the filename without path for easier pattern matching
+    set "filename=%%~ni"
+
+    :: Skip files that start with inc_
+    echo !filename! | findstr /b "inc_" > nul
     if !errorlevel! neq 0 (
-        echo Failed to compile %%~nxi
-        set /a "errors+=1"
-    ) else (
-        set /a "count+=1"
+        echo Compiling: %%~nxi
+        call %COMPILER% "%%i" %COMMON_ARGS% -o "..\compiled\%%~ni.spv"
+        if !errorlevel! neq 0 (
+            echo Failed to compile %%~nxi
+            set /a "errors+=1"
+        ) else (
+            set /a "count+=1"
+        )
     )
 )
 
@@ -65,20 +81,27 @@ set "changes=0"
 
 :: Check each file for changes
 for /r %%i in (*.slang) do (
-    set "current_hash=%%~zi%%~ti"
-    set /p stored_hash=<"%hash_dir%\%%~ni%%~xi.hash"
+    :: Extract just the filename without path
+    set "filename=%%~ni"
 
-    if not "!current_hash!"=="!stored_hash!" (
-        echo Change detected in: %%~nxi
-        echo Compiling: %%~nxi
-    	call %COMPILER% "%%i" %COMMON_ARGS% -o "..\compiled\%%~ni.spv"
-        if !errorlevel! neq 0 (
-            echo Failed to compile %%~nxi
-        ) else (
-            echo Successfully compiled %%~nxi
+    :: Skip files that start with inc_
+    echo !filename! | findstr /b "inc_" > nul
+    if !errorlevel! neq 0 (
+        set "current_hash=%%~zi%%~ti"
+        set /p stored_hash=<"%hash_dir%\%%~ni%%~xi.hash" 2>nul || set "stored_hash="
+
+        if not "!current_hash!"=="!stored_hash!" (
+            echo Change detected in: %%~nxi
+            echo Compiling: %%~nxi
+            call %COMPILER% "%%i" %COMMON_ARGS% -o "..\compiled\%%~ni.spv"
+            if !errorlevel! neq 0 (
+                echo Failed to compile %%~nxi
+            ) else (
+                echo Successfully compiled %%~nxi
+            )
+            echo !current_hash!>"%hash_dir%\%%~ni%%~xi.hash"
+            set "changes=1"
         )
-        echo !current_hash!>"%hash_dir%\%%~ni%%~xi.hash"
-        set "changes=1"
     )
 )
 
@@ -87,4 +110,4 @@ if !changes! equ 0 (
 )
 goto watch_loop
 
-endlocal
+endLocal

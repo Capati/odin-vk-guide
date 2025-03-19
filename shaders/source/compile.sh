@@ -1,23 +1,28 @@
 #!/bin/bash
 
-# Check if VULKAN_SDK is set
-if [ -z "$VULKAN_SDK" ]; then
-    echo "Error: VULKAN_SDK environment variable is not set"
-    exit 1
-fi
+# First check if slangc is already in PATH
+if command -v slangc &> /dev/null; then
+    COMPILER="slangc"
+else
+    # If not in PATH, check VULKAN_SDK
+    if [ -z "$VULKAN_SDK" ]; then
+        echo "Error: slangc not found in PATH and VULKAN_SDK environment variable is not set"
+        exit 1
+    fi
 
-COMPILER=$VULKAN_SDK/bin/slangc
+    COMPILER="$VULKAN_SDK/bin/slangc"
 
-# Check if slangc exists
-if [ ! -f "$COMPILER" ]; then
-    echo "Error: slangc not found in $VULKAN_SDK/bin"
-    exit 1
+    # Check if slangc exists in Vulkan SDK
+    if [ ! -f "$COMPILER" ]; then
+        echo "Error: slangc not found in PATH or in $VULKAN_SDK/bin"
+        exit 1
+    fi
 fi
 
 # Check for watch argument
-watch_mode=false
+WATCH_MODE=false
 if [ "$1" = "watch" ]; then
-    watch_mode=true
+    WATCH_MODE=true
 fi
 
 # Create compiled directory if it doesn't exist
@@ -32,9 +37,16 @@ COMMON_ARGS="-entry main -profile glsl_450 -target spirv"
 
 find . -type f \( -name "*.slang" \) | while read -r file; do
     filename=$(basename "$file")
+    basename="${filename%.*}"
+
+    # Skip files that start with inc_
+    if [[ "$basename" == inc_* ]]; then
+        continue
+    fi
+
     echo "Compiling: $filename"
 
-    "$COMPILER" "$file" $COMMON_ARGS -o "../compiled/$(basename "$file").spv"
+    "$COMPILER" "$file" $COMMON_ARGS -o "../compiled/$filename.spv"
 
     if [ $? -ne 0 ]; then
         echo "Failed to compile $filename"
@@ -52,7 +64,7 @@ if [ $errors -gt 0 ]; then
 fi
 
 # If not in watch mode, exit here
-if [ "$watch_mode" != "true" ]; then
+if [ "$WATCH_MODE" != "true" ]; then
     exit 0
 fi
 
@@ -67,6 +79,13 @@ mkdir -p "$hash_dir"
 # Store initial state of each file
 find . -type f \( -name "*.slang" \) | while read -r file; do
     filename=$(basename "$file")
+    basename="${filename%.*}"
+
+    # Skip files that start with inc_
+    if [[ "$basename" == inc_* ]]; then
+        continue
+    }
+
     stat -c "%s%Y" "$file" > "$hash_dir/$filename.hash"
 done
 
@@ -76,14 +95,21 @@ while true; do
 
     find . -type f \( -name "*.slang" \) | while read -r file; do
         filename=$(basename "$file")
+        basename="${filename%.*}"
+
+        # Skip files that start with inc_
+        if [[ "$basename" == inc_* ]]; then
+            continue
+        fi
+
         current_hash=$(stat -c "%s%Y" "$file")
-        stored_hash=$(cat "$hash_dir/$filename.hash")
+        stored_hash=$(cat "$hash_dir/$filename.hash" 2>/dev/null || echo "")
 
         if [ "$current_hash" != "$stored_hash" ]; then
             echo "Change detected in: $filename"
             echo "Compiling: $filename"
 
-            "$VULKAN_SDK/bin/slangc" "$file" -o "../compiled/$filename.spv"
+            "$COMPILER" "$file" $COMMON_ARGS -o "../compiled/$filename.spv"
 
             if [ $? -ne 0 ]; then
                 echo "Failed to compile $filename"
