@@ -83,14 +83,14 @@ engine_init_commands :: proc(self: ^Engine) -> (ok: bool) {
         queueFamilyIndex = self.graphics_queue_family,
     }
 
-    for i in 0 ..< FRAME_OVERLAP {
+    for &frame in self.frames {
         // Create the command pool
         vk_check(
             vk.CreateCommandPool(
                 self.vk_device,
                 &command_pool_info,
                 nil,
-                &self.frames[i].command_pool,
+                &frame.command_pool,
             ),
         )
 
@@ -98,7 +98,7 @@ engine_init_commands :: proc(self: ^Engine) -> (ok: bool) {
         cmd_alloc_info := vk.CommandBufferAllocateInfo {
             sType              = .COMMAND_BUFFER_ALLOCATE_INFO,
             pNext              = nil,
-            commandPool        = self.frames[i].command_pool,
+            commandPool        = frame.command_pool,
             commandBufferCount = 1,
             level              = .PRIMARY,
         }
@@ -107,7 +107,7 @@ engine_init_commands :: proc(self: ^Engine) -> (ok: bool) {
             vk.AllocateCommandBuffers(
                 self.vk_device,
                 &cmd_alloc_info,
-                &self.frames[i].main_command_buffer,
+                &frame.main_command_buffer,
             ),
         )
     }
@@ -219,26 +219,17 @@ engine_init_commands :: proc(self: ^Engine) -> (ok: bool) {
         {.RESET_COMMAND_BUFFER},
     )
 
-    for i in 0 ..< FRAME_OVERLAP {
+    for &frame in self.frames {
         // Create the command pool
         vk_check(
-            vk.CreateCommandPool(
-                self.vk_device,
-                &command_pool_info,
-                nil,
-                &self.frames[i].command_pool,
-            ),
+            vk.CreateCommandPool(self.vk_device, &command_pool_info, nil, &frame.command_pool),
         )
 
         // Allocate the default command buffer that we will use for rendering
-        cmd_alloc_info := command_buffer_allocate_info(self.frames[i].command_pool)
+        cmd_alloc_info := command_buffer_allocate_info(frame.command_pool)
 
         vk_check(
-            vk.AllocateCommandBuffers(
-                self.vk_device,
-                &cmd_alloc_info,
-                &self.frames[i].main_command_buffer,
-            ),
+            vk.AllocateCommandBuffers(self.vk_device, &cmd_alloc_info, &frame.main_command_buffer),
         )
     }
 
