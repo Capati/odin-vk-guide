@@ -80,9 +80,9 @@ is fast and extensible.
 
 - [x] Descriptor Abstractions
 - [x] Textures
-- [ ] Engine Architecture
-- [ ] Setting up Materials
-- [ ] Meshes and Camera
+- [x] Engine Architecture
+- [x] Setting up Materials
+- [x] Meshes and Camera
 
 ### 5. GLTF loading
 
