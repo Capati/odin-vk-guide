@@ -3,6 +3,9 @@ sidebar_position: 1
 description: External libraries and compilation guide.
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 # Project Setup
 
 As in the original tutorial, we will use a companion Git project. This project serves as a
@@ -116,15 +119,20 @@ directory, this is where the external libraries is located.
 Using the command line is fine, but we can use the provided scripts to automate the above
 command.
 
-```bash title="build.bat on Windows"
-build.bat tutorial\02_drawing_with_compute
-```
-
-```bash title="build.sh on Unix"
-# Before running this script for the first time, you'll need to make it executable:
-# chmod +x ./build.sh
-./build.sh tutorial/02_drawing_with_compute
-```
+<Tabs>
+  <TabItem value="windows" label="Windows" default>
+    ```bash
+    build.bat tutorial\02_drawing_with_compute
+    ```
+  </TabItem>
+  <TabItem value="unix" label="Unix">
+    ```bash
+    # Before running this script for the first time, you'll need to make it executable:
+    # chmod +x ./build.sh
+    ./build.sh tutorial/02_drawing_with_compute
+    ```
+  </TabItem>
+</Tabs>
 
 The first argument is the package directory to build. Additionally, there is some optional
 arguments: use `run` to immediately execute the program after compilation (equivalent to `odin
