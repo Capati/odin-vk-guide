@@ -478,5 +478,9 @@ engine_cleanup :: proc(self: ^Engine) {
 }
 ```
 
+This is the end result for this chapter:
+
+![Light Monkey](./img/lightmonkey.png)
+
 This concludes chapter 4. On the next chapter, we will upgrade the gltf loader to load scenes
 with textures and multiple objects, and set up a interactive FPS camera.
