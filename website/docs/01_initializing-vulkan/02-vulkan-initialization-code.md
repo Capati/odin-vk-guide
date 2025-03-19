@@ -455,7 +455,7 @@ destroyed with the swapchain.
 Just to check that our validation layers are working, let's try to call the destruction
 procedures in the wrong order.
 
-```odin title="engine.odin"
+```odin title="engine.odin" {6,7}
 engine_cleanup :: proc(self: ^Engine) {
     if !self.is_initialized {
         return
