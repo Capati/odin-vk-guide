@@ -1,7 +1,8 @@
 {
-  "label": "3. Graphics Pipelines",
-  "position": 6,
-  "link": {
-    "type": "generated-index"
-  }
+	"label": "3. Graphics Pipelines",
+	"position": 6,
+	"link": {
+		"type": "generated-index",
+		"description": "We have already drawn with compute shaders, but in this chapter, we will use the real capabilities of a GPU to draw meshes using the rasterizer systems and the normal graphics pipeline."
+	}
 }

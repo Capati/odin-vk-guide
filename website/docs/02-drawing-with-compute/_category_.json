@@ -1,7 +1,8 @@
 {
-  "label": "2. Drawing with compute",
-  "position": 5,
-  "link": {
-    "type": "generated-index"
-  }
+	"label": "2. Drawing With Compute",
+	"position": 5,
+	"link": {
+		"type": "generated-index",
+		"description": "In this chapter, we are going to begin drawing using compute shaders. As part of the chapter, we will also setup Dear ImGui library to get some user interface."
+	}
 }
