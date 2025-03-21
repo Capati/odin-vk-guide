@@ -83,9 +83,14 @@ is fast and extensible.
 - [x] Engine Architecture
 - [x] Setting up Materials
 - [x] Meshes and Camera
-- [x] Improving The Scene Graph (**Extra section**)
 
-### 5. GLTF loading
+### 5. Scene Graph (Extra Chapter)
+
+- [x] Improving The Scene Graph
+- [ ] Render Scene Tree UI
+- [ ] Loading and Saving a Scene Graph
+
+### 6. GLTF loading
 
 With the basics of the engine done, this chapter focuses on loading GLTF files and setting up
 more advanced rendering features.
