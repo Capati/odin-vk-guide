@@ -904,9 +904,8 @@ this new implementation:
 ```
 
 We start by adding a default material to the scene’s `materials` array and retrieving its
-index, then creating a `root` node as the base of the scene’s hierarchy. It iterates through
-each mesh in the scene, and for each mesh, it adds a node under the `root`, linking it to the
-mesh and the default material.
+index. Then iterates through each mesh in the scene, and for each mesh, it adds a node with no
+parent`.
 
 :::note[]
 
