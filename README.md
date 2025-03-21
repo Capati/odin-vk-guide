@@ -17,8 +17,9 @@ goes to the authors of vkguide.dev.
   - [2. Drawing with Compute](#2-drawing-with-compute)
   - [3. Graphics Pipelines](#3-graphics-pipelines)
   - [4. Textures and Engine Architecture](#4-textures-and-engine-architecture)
-  - [5. GLTF loading](#5-gltf-loading)
-  - [6. GPU Driven Rendering](#6-gpu-driven-rendering)
+  - [5. Scene Graph (Extra Chapter)](#5-scene-graph-extra-chapter)
+  - [6. GLTF loading](#6-gltf-loading)
+  - [7. GPU Driven Rendering](#7-gpu-driven-rendering)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -100,7 +101,7 @@ more advanced rendering features.
 - [ ] GLTF Textures
 - [ ] Faster Draw
 
-### 6. GPU Driven Rendering
+### 7. GPU Driven Rendering
 
 In this chapter, we are going to continue the evolution of the engine after the 5 core chapters
 by implementing high performance rendering techniques.
