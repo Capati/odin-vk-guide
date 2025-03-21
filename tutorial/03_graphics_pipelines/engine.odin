@@ -12,7 +12,7 @@ import "libs:vkb"
 import "libs:vma"
 
 TITLE :: "3. Graphics Pipelines"
-DEFAULT_WINDOW_EXTENT :: vk.Extent2D{800, 600} // Default window size in pixels
+DEFAULT_WINDOW_EXTENT :: vk.Extent2D{1280, 678} // Default window size in pixels
 
 Frame_Data :: struct {
 	command_pool:          vk.CommandPool,

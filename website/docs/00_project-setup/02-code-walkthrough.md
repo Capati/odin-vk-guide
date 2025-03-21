@@ -216,7 +216,7 @@ import "vendor:glfw"
 import vk "vendor:vulkan"
 
 TITLE :: "0. Project Setup"
-DEFAULT_WINDOW_EXTENT :: vk.Extent2D{800, 600} // Default window size in pixels
+DEFAULT_WINDOW_EXTENT :: vk.Extent2D{1280, 678} // Default window size in pixels
 
 Engine :: struct {
     // Platform
