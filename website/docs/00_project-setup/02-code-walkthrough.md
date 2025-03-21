@@ -89,8 +89,12 @@ Allocator][] to detect memory leaks or improper deallocations. We then call the 
 procedure to begin the application's core logic. From there, we allocate an `Engine` object,
 defined in `engine.odin`, which serves as the central state for our engine.
 
+:::note[]
+
 In the future, this could be a good place to set some configuration parameters brought from the
 command line arguments or a settings file.
+
+:::
 
 ### Core
 
@@ -259,7 +263,7 @@ engine_init :: proc(self: ^Engine) -> (ok: bool) {
 }
 ```
 
-:::tip[Global logger]
+:::info[Global logger]
 
 We created a global logger (`g_logger`) that will be used in callbacks that are outside of
 Odin context.
