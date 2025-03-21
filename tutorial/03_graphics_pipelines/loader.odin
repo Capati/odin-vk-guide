@@ -77,8 +77,11 @@ load_gltf_meshes :: proc(
 		new_mesh := new(Mesh_Asset, allocator)
 
 		// Set mesh name
-		new_mesh.name =
-			mesh.name != nil ? strings.clone(string(mesh.name)) : strings.clone("unnamed_mesh")
+		if mesh.name != nil {
+			new_mesh.name = strings.clone(string(mesh.name), allocator)
+		} else {
+			new_mesh.name = strings.clone("unnamed_mesh", allocator)
+		}
 
 		// Initialize surfaces array for this mesh
 		new_mesh.surfaces = make([dynamic]Geo_Surface, allocator)
