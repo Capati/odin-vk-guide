@@ -13,9 +13,9 @@ Material :: struct {
 }
 
 Geo_Surface :: struct {
-	start_index: u32,
-	count:       u32,
-	material:    Material,
+	start_index:    u32,
+	count:          u32,
+	material_index: u32, // Index into the scene's materials array
 }
 
 Mesh_Asset :: struct {
@@ -24,7 +24,7 @@ Mesh_Asset :: struct {
 	mesh_buffers: GPU_Mesh_Buffers,
 }
 
-Mesh_Asset_List :: [dynamic]^Mesh_Asset
+Mesh_Asset_List :: [dynamic]Mesh_Asset
 
 // Override the vertex colors with the vertex normals which is useful for debugging.
 OVERRIDE_VERTEX_COLORS :: #config(OVERRIDE_VERTEX_COLORS, false)
@@ -33,12 +33,15 @@ OVERRIDE_VERTEX_COLORS :: #config(OVERRIDE_VERTEX_COLORS, false)
 load_gltf_meshes :: proc(
 	engine: ^Engine,
 	file_path: string,
+	meshes: ^Mesh_Asset_List,
 	allocator := context.allocator,
+	loc := #caller_location,
 ) -> (
-	meshes: Mesh_Asset_List,
 	ok: bool,
 ) {
 	log.debugf("Loading GLTF: %s", file_path)
+
+	ensure(meshes != nil, "Invalid meshes", loc)
 
 	// Configure cgltf parsing options
 	// Using .invalid type lets cgltf automatically detect if it's .gltf or .glb
@@ -70,16 +73,11 @@ load_gltf_meshes :: proc(
 	indices_temp: [dynamic]u32;indices_temp.allocator = ta
 	vertices_temp: [dynamic]Vertex;vertices_temp.allocator = ta
 
-	// Initialize the output mesh list
-	meshes = make(Mesh_Asset_List, allocator)
-	defer if !ok {
-		destroy_mesh_assets(&meshes, allocator)
-	}
-
 	// Process each mesh in the glTF file
 	for &mesh in data.meshes {
-		// Allocate new mesh asset
-		new_mesh := new(Mesh_Asset, allocator)
+		// Add a new empty mesh to our collection and get a reference to it
+		// Instead of allocating a pointer, we work with the actual Mesh_Asset structure
+		new_mesh := append_and_get_ref(meshes, Mesh_Asset{})
 
 		// Set mesh name
 		if mesh.name != nil {
@@ -330,32 +328,25 @@ load_gltf_meshes :: proc(
 
 		// Upload mesh data to GPU
 		new_mesh.mesh_buffers = upload_mesh(engine, indices_temp[:], vertices_temp[:]) or_return
-
-		// Add completed mesh to output list
-		append(&meshes, new_mesh)
 	}
 
 	if len(meshes) == 0 {
 		return
 	}
 
-	return meshes, true
+	return true
 }
 
 // Destroys a single `Mesh_Asset` and frees all its resources.
 destroy_mesh_asset :: proc(mesh: ^Mesh_Asset, allocator := context.allocator) {
-	assert(mesh != nil, "Invalid 'Mesh_Asset'")
 	context.allocator = allocator
 	delete(mesh.name)
 	delete(mesh.surfaces)
-	free(mesh)
 }
 
 // Destroys all mesh assets in a list.
 destroy_mesh_assets :: proc(meshes: ^Mesh_Asset_List, allocator := context.allocator) {
-	context.allocator = allocator
 	for &mesh in meshes {
-		destroy_mesh_asset(mesh)
+		destroy_mesh_asset(&mesh, allocator)
 	}
-	delete(meshes^)
 }

@@ -83,6 +83,7 @@ is fast and extensible.
 - [x] Engine Architecture
 - [x] Setting up Materials
 - [x] Meshes and Camera
+- [x] Improving The Scene Graph (**Extra section**)
 
 ### 5. GLTF loading
 

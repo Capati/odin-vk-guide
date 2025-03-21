@@ -78,11 +78,14 @@ engine_cleanup :: proc(self: ^Engine) {
 	ensure(vk.DeviceWaitIdle(self.vk_device) == .SUCCESS)
 
 	// Clean up scene nodes
-	delete(self.main_draw_context.opaque_surfaces)
-	for _, &node in self.loaded_nodes {
-		free(node)
+	for &mesh in self.scene.meshes {
+		destroy_buffer(mesh.mesh_buffers.index_buffer)
+		destroy_buffer(mesh.mesh_buffers.vertex_buffer)
 	}
-	delete(self.loaded_nodes)
+	destroy_mesh_assets(&self.scene.meshes)
+	scene_destroy(&self.scene)
+	delete(self.main_draw_context.opaque_surfaces)
+	delete(self.name_for_node)
 
 	for &frame in self.frames {
 		vk.DestroyCommandPool(self.vk_device, frame.command_pool, nil)
@@ -95,12 +98,6 @@ engine_cleanup :: proc(self: ^Engine) {
 		// Flush and destroy the peer frame deletion queue
 		deletion_queue_destroy(&frame.deletion_queue)
 	}
-
-	for &mesh in self.test_meshes {
-		destroy_buffer(mesh.mesh_buffers.index_buffer)
-		destroy_buffer(mesh.mesh_buffers.vertex_buffer)
-	}
-	destroy_mesh_assets(&self.test_meshes)
 
 	// Flush and destroy the global deletion queue
 	deletion_queue_destroy(&self.main_deletion_queue)
@@ -834,9 +831,12 @@ engine_init_imgui :: proc(self: ^Engine) -> (ok: bool) {
 }
 
 engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
-	self.test_meshes = load_gltf_meshes(self, "assets/basicmesh.glb") or_return
+	// Initialize the scene
+	scene_init(&self.scene)
+
+	load_gltf_meshes(self, "assets/basicmesh.glb", &self.scene.meshes) or_return
 	defer if !ok {
-		destroy_mesh_assets(&self.test_meshes)
+		destroy_mesh_assets(&self.scene.meshes)
 	}
 
 	// 3 default textures, white, grey, black. 1 pixel each
@@ -931,7 +931,7 @@ engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
 	material_resources.data_buffer = material_constants.buffer
 	material_resources.data_buffer_offset = 0
 
-	self.default_data = metallic_roughness_write(
+	self.default_material_data = metallic_roughness_write(
 		&self.metal_rough_material,
 		self.vk_device,
 		.Main_Color,
@@ -939,19 +939,20 @@ engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
 		&self.global_descriptor_allocator,
 	) or_return
 
-	for &m in self.test_meshes {
-		new_node := new(Mesh_Node)
-		mesh_node_init(new_node)
-		new_node.mesh = m
+	// Add default material to the materials array
+	default_material_idx := append_and_get_idx(&self.scene.materials, self.default_material_data)
 
-		// Set default material for all surfaces
-		for &surface in new_node.mesh.surfaces {
-			material: Material
-			material.data = self.default_data
-			surface.material = material
+	// Root node for the scene
+	root := scene_add_node(&self.scene, -1, 0)
+
+	// Process each mesh
+	for m, i in self.scene.meshes {
+        // Ignore the Sphere for now
+		if m.name == "Sphere" {
+			continue
 		}
-
-		self.loaded_nodes[m.name] = cast(^Node)new_node
+		node_idx := scene_add_mesh_node(&self.scene, root, i, default_material_idx, m.name)
+		self.name_for_node[m.name] = u32(node_idx)
 	}
 
 	return true

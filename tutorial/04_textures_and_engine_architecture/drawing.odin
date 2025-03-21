@@ -2,7 +2,6 @@ package vk_guide
 
 // Core
 import "core:math"
-import la "core:math/linalg"
 
 // Vendor
 import vk "vendor:vulkan"
@@ -341,11 +340,13 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
 
 	// Draw all opaque surfaces
 	for &draw in self.main_draw_context.opaque_surfaces {
-		vk.CmdBindPipeline(cmd, .GRAPHICS, draw.material.pipeline.pipeline)
+		material := &self.scene.materials[draw.material] // Use draw.material directly
+
+		vk.CmdBindPipeline(cmd, .GRAPHICS, material.pipeline.pipeline)
 		vk.CmdBindDescriptorSets(
 			cmd,
 			.GRAPHICS,
-			draw.material.pipeline.layout,
+			material.pipeline.layout,
 			0,
 			1,
 			&global_descriptor,
@@ -355,10 +356,10 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
 		vk.CmdBindDescriptorSets(
 			cmd,
 			.GRAPHICS,
-			draw.material.pipeline.layout,
+			material.pipeline.layout,
 			1,
 			1,
-			&draw.material.material_set,
+			&material.material_set,
 			0,
 			nil,
 		)
@@ -372,7 +373,7 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
 
 		vk.CmdPushConstants(
 			cmd,
-			draw.material.pipeline.layout,
+			material.pipeline.layout,
 			{.VERTEX},
 			0,
 			size_of(GPU_Draw_Push_Constants),
@@ -385,97 +386,4 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
 	vk.CmdEndRendering(cmd)
 
 	return true
-}
-
-// Render object that holds drawing data.
-Render_Object :: struct {
-	index_count:           u32,
-	first_index:           u32,
-	index_buffer:          vk.Buffer,
-	material:              ^Material_Instance,
-	transform:             la.Matrix4f32,
-	vertex_buffer_address: vk.DeviceAddress,
-}
-
-// Define our base drawing context and renderable types.
-Draw_Context :: struct {
-	opaque_surfaces: [dynamic]Render_Object,
-}
-
-// Base "interface" for renderable dynamic object.
-Renderable :: struct {
-	draw: proc(self: ^Renderable, top_matrix: la.Matrix4f32, ctx: ^Draw_Context),
-}
-
-// Structure that can hold children and propagate transforms.
-Node :: struct {
-	using renderable: Renderable,
-	parent:           ^Node,
-	children:         [dynamic]^Node,
-	local_transform:  la.Matrix4x4f32,
-	world_transform:  la.Matrix4x4f32,
-}
-
-// Initialize a node.
-node_init :: proc(node: ^Node) {
-	node.local_transform = la.MATRIX4F32_IDENTITY
-	node.world_transform = la.MATRIX4F32_IDENTITY
-	node.draw = node_draw
-}
-
-// Updates the world transform of this node and all children.
-node_refresh_transform :: proc(node: ^Node, parent_matrix: la.Matrix4x4f32) {
-	node.world_transform = la.matrix_mul(parent_matrix, node.local_transform)
-	// Recursively update all children
-	for &child in node.children {
-		node_refresh_transform(child, node.world_transform)
-	}
-}
-
-// Default draw implementation for nodes. Only draws children, serves as base behavior.
-node_draw :: proc(self: ^Renderable, top_matrix: la.Matrix4x4f32, ctx: ^Draw_Context) {
-	node := cast(^Node)self
-	// Iterate through and draw all child nodes
-	for &child in node.children {
-		child.draw(cast(^Renderable)child, top_matrix, ctx)
-	}
-}
-
-// Mesh node that holds a mesh asset and can be drawn.
-Mesh_Node :: struct {
-	using node: Node,
-	mesh:       ^Mesh_Asset,
-}
-
-// Initialize a mesh node.
-mesh_node_init :: proc(mesh_node: ^Mesh_Node) {
-	node_init(cast(^Node)mesh_node)
-	mesh_node.draw = mesh_node_draw
-}
-
-// Draw implementation for mesh nodes.
-// Converts mesh data into render objects for the renderer.
-mesh_node_draw :: proc(self: ^Renderable, top_matrix: la.Matrix4x4f32, ctx: ^Draw_Context) {
-	mesh_node := cast(^Mesh_Node)self
-
-	// Combine top matrix with node's world transform
-	node_matrix := la.matrix_mul(top_matrix, mesh_node.world_transform)
-
-	// Add render objects for each surface
-	for &surface in mesh_node.mesh.surfaces {
-		def := Render_Object {
-			index_count           = surface.count,
-			first_index           = surface.start_index,
-			index_buffer          = mesh_node.mesh.mesh_buffers.index_buffer.buffer,
-			material              = &surface.material.data,
-			transform             = node_matrix,
-			vertex_buffer_address = mesh_node.mesh.mesh_buffers.vertex_buffer_address,
-		}
-
-		// Add the render object to the context's opaque surfaces list
-		append(&ctx.opaque_surfaces, def)
-	}
-
-	// Call parent draw to process children
-	node_draw(self, top_matrix, ctx)
 }

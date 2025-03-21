@@ -110,11 +110,11 @@ Engine :: struct {
 	current_background_effect:        Compute_Effect_Kind,
 	mesh_pipeline_layout:             vk.PipelineLayout,
 	mesh_pipeline:                    vk.Pipeline,
-	test_meshes:                      Mesh_Asset_List,
 
 	// Scene
 	main_draw_context:                Draw_Context,
-	loaded_nodes:                     map[string]^Node,
+	name_for_node:                    map[string]u32,
+	scene:                            Scene,
 	scene_data:                       GPU_Scene_Data,
 	gpu_scene_data_descriptor_layout: vk.DescriptorSetLayout,
 
@@ -128,7 +128,7 @@ Engine :: struct {
 	single_image_descriptor_layout:   vk.DescriptorSetLayout,
 
 	// Materials
-	default_data:                     Material_Instance,
+	default_material_data:            Material_Instance,
 	metal_rough_material:             Metallic_Roughness,
 
 	// Helper libraries
@@ -145,17 +145,42 @@ engine_update_scene :: proc(self: ^Engine) {
 	// Clear previous render objects
 	clear(&self.main_draw_context.opaque_surfaces)
 
-	// Draw the Suzanne mesh
-	if suzanne, ok := self.loaded_nodes["Suzanne"]; ok {
-		suzanne.draw(suzanne, la.MATRIX4F32_IDENTITY, &self.main_draw_context)
+	// Find and update Suzanne node
+	if suzanne_node, ok := self.name_for_node["Suzanne"]; ok {
+		self.scene.local_transforms[suzanne_node] = la.MATRIX4F32_IDENTITY
 	}
 
-	// Draw a line of cubes
-	if cube, ok := self.loaded_nodes["Cube"]; ok {
+	// Find and update Cube nodes (create a line of cubes)
+	if cube_node, ok := self.name_for_node["Cube"]; ok {
 		for x := -3; x < 3; x += 1 {
 			scale := la.matrix4_scale(la.Vector3f32{0.2, 0.2, 0.2})
 			translation := la.matrix4_translate(la.Vector3f32{f32(x), 1, 0})
-			cube.draw(cube, translation * scale, &self.main_draw_context)
+			transform := la.matrix_mul(translation, scale)
+
+			// For simplicity, assume one node per cube
+			if x == -3 {
+				// Use the original cube node for x = -3
+				self.scene.local_transforms[cube_node] = transform
+			} else {
+				// Add new nodes for additional cubes
+				new_cube_idx := scene_add_node(
+					&self.scene,
+					self.scene.hierarchy[cube_node].parent,
+					1,
+				)
+				self.scene.local_transforms[u32(new_cube_idx)] = transform
+				// Copy mesh and material
+				self.scene.mesh_for_node[u32(new_cube_idx)] = self.scene.mesh_for_node[cube_node]
+				self.scene.material_for_node[u32(new_cube_idx)] =
+					self.scene.material_for_node[cube_node]
+			}
+		}
+	}
+
+	// Find and draw all root nodes
+	for &hierarchy, i in self.scene.hierarchy {
+		if hierarchy.parent == -1 {
+			scene_draw_node(&self.scene, i, &self.main_draw_context)
 		}
 	}
 
@@ -166,7 +191,7 @@ engine_update_scene :: proc(self: ^Engine) {
 		f32(la.to_radians(70.0)),
 		aspect,
 		0.1,
-		true, // Invert the Y direction to match OpenGL and glTF axis conventions
+		true, // Invert Y to match OpenGL/glTF conventions
 	)
 	self.scene_data.viewproj = la.matrix_mul(self.scene_data.proj, self.scene_data.view)
 

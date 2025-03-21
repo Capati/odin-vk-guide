@@ -26,6 +26,18 @@ vk_check :: #force_inline proc(
 	return false
 }
 
+// Appends an element to a dynamic array and returns its index.
+append_and_get_idx :: #force_inline proc(array: ^$T/[dynamic]$E, arg: E) -> u32 {
+	append(array, arg)
+	return u32(len(array) - 1)
+}
+
+// Appends an element to a dynamic array and returns a reference to the newly added element.
+append_and_get_ref :: #force_inline proc(array: ^$T/[dynamic]$E, arg: E) -> ^E {
+	append(array, arg)
+	return &array[len(array) - 1]
+}
+
 engine_immediate_submit :: proc(
 	self: ^Engine,
 	data: $T,
