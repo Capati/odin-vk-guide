@@ -340,7 +340,7 @@ for &m in self.test_meshes {
     // Set default material for all surfaces
     for &surface in new_node.mesh.surfaces {
         material: Material
-        material.data = self.default_data
+        material.data = self.default_material_data
         surface.material = material
     }
 

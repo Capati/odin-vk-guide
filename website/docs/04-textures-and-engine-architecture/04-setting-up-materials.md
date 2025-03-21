@@ -460,7 +460,7 @@ default.
 ```odin
 Engine :: struct {
     // Materials
-    default_data:         Material_Instance,
+    default_material_data:         Material_Instance,
     metal_rough_material: Metallic_Roughness,
 }
 ```
@@ -533,7 +533,7 @@ engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
     material_resources.data_buffer = material_constants.buffer
     material_resources.data_buffer_offset = 0
 
-    self.default_data = metallic_roughness_write(
+    self.default_material_data = metallic_roughness_write(
         &self.metal_rough_material,
         self.vk_device,
         .Main_Color,
@@ -547,5 +547,5 @@ engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
 
 We are going to fill the parameters of the material on `Material_Resources` with the default white
 image. Then we create a buffer to hold the material color, and add it for deletion. Then we
-call `write_material` to create the descriptor set and initialize that `default_data` material
+call `write_material` to create the descriptor set and initialize that `default_material_data` material
 properly.
