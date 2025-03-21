@@ -910,8 +910,8 @@ has been delegated to the `Scene`.
 :::
 
 Finally, it stores the node’s index in a map using the mesh’s name as the key, enabling easily
-lookups later, this is how we got the **Suzanne** and **Cube** meshes from
-`engine_update_scene`.
+lookups later, this is how we will get the **Suzanne** and **Cube** meshes in the following
+steps.
 
 For the initial transformations and duplicated cubes, add this after the `for` that process
 each mesh:
