@@ -100,7 +100,7 @@ Before we begin, create a new file called `scene.odin` and move the definitions 
 array. This change ensures better alignment with the data-oriented design principles discussed
 earlier.
 
-```odin title="scene.odin" {15}
+```odin title="scene.odin"
 package vk_guide
 
 // Core
@@ -110,11 +110,17 @@ import la "core:math/linalg"
 // Vendor
 import vk "vendor:vulkan"
 
+// Define sentinel values for indicating invalid node
+NO_MESH :: max(u32)
+NO_MATERIAL :: max(u32)
+NO_NAME :: max(u32)
+
 // Render object that holds drawing data.
 Render_Object :: struct {
     index_count:           u32,
     first_index:           u32,
     index_buffer:          vk.Buffer,
+    // highlight-next-line
     material:              u32, // Index into materials array
     transform:             la.Matrix4f32,
     vertex_buffer_address: vk.DeviceAddress,
