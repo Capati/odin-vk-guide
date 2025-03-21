@@ -145,38 +145,6 @@ engine_update_scene :: proc(self: ^Engine) {
 	// Clear previous render objects
 	clear(&self.main_draw_context.opaque_surfaces)
 
-	// Find and update Suzanne node
-	if suzanne_node, ok := self.name_for_node["Suzanne"]; ok {
-		self.scene.local_transforms[suzanne_node] = la.MATRIX4F32_IDENTITY
-	}
-
-	// Find and update Cube nodes (create a line of cubes)
-	if cube_node, ok := self.name_for_node["Cube"]; ok {
-		for x := -3; x < 3; x += 1 {
-			scale := la.matrix4_scale(la.Vector3f32{0.2, 0.2, 0.2})
-			translation := la.matrix4_translate(la.Vector3f32{f32(x), 1, 0})
-			transform := la.matrix_mul(translation, scale)
-
-			// For simplicity, assume one node per cube
-			if x == -3 {
-				// Use the original cube node for x = -3
-				self.scene.local_transforms[cube_node] = transform
-			} else {
-				// Add new nodes for additional cubes
-				new_cube_idx := scene_add_node(
-					&self.scene,
-					self.scene.hierarchy[cube_node].parent,
-					1,
-				)
-				self.scene.local_transforms[u32(new_cube_idx)] = transform
-				// Copy mesh and material
-				self.scene.mesh_for_node[u32(new_cube_idx)] = self.scene.mesh_for_node[cube_node]
-				self.scene.material_for_node[u32(new_cube_idx)] =
-					self.scene.material_for_node[cube_node]
-			}
-		}
-	}
-
 	// Find and draw all root nodes
 	for &hierarchy, i in self.scene.hierarchy {
 		if hierarchy.parent == -1 {

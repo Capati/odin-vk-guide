@@ -4,6 +4,7 @@ package vk_guide
 import "base:runtime"
 import sa "core:container/small_array"
 import "core:log"
+import la "core:math/linalg"
 
 // Vendor
 import "vendor:glfw"
@@ -942,17 +943,45 @@ engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
 	// Add default material to the materials array
 	default_material_idx := append_and_get_idx(&self.scene.materials, self.default_material_data)
 
-	// Root node for the scene
-	root := scene_add_node(&self.scene, -1, 0)
-
 	// Process each mesh
 	for m, i in self.scene.meshes {
-        // Ignore the Sphere for now
+		// Ignore the Sphere for now
 		if m.name == "Sphere" {
 			continue
 		}
-		node_idx := scene_add_mesh_node(&self.scene, root, i, default_material_idx, m.name)
+
+		node_idx := scene_add_mesh_node(&self.scene, -1, i, default_material_idx, m.name)
 		self.name_for_node[m.name] = u32(node_idx)
+	}
+
+	// Find and update Suzanne node
+	if suzanne_node, suzanne_ok := self.name_for_node["Suzanne"]; suzanne_ok {
+		self.scene.local_transforms[suzanne_node] = la.MATRIX4F32_IDENTITY
+	}
+
+	// Find and update Cube nodes (create a line of cubes)
+	if cube_node, cube_ok := self.name_for_node["Cube"]; cube_ok {
+		for x := -3; x < 3; x += 1 {
+			scale := la.matrix4_scale(la.Vector3f32{0.2, 0.2, 0.2})
+			translation := la.matrix4_translate(la.Vector3f32{f32(x), 1, 0})
+			transform := la.matrix_mul(translation, scale)
+
+			// For simplicity, assume one node per cube
+			if x == -3 {
+				// Use the original cube node for x = -3
+				self.scene.local_transforms[cube_node] = transform
+			} else {
+				// Add new nodes for additional cubes
+				new_cube_idx := scene_add_mesh_node(
+					scene = &self.scene,
+					parent = cube_node,
+					mesh_index = cube_node,
+					material_index = cube_node,
+					name = "Cube",
+				)
+				self.scene.local_transforms[u32(new_cube_idx)] = transform
+			}
+		}
 	}
 
 	return true

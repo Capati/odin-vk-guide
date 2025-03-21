@@ -826,43 +826,10 @@ Engine :: struct {
 This is the new `engine_update_scene`:
 
 ```odin
+// Updates the scene state and prepares render objects.
 engine_update_scene :: proc(self: ^Engine) {
     // Clear previous render objects
     clear(&self.main_draw_context.opaque_surfaces)
-
-    // Other code above ---
-
-    // Find and update Suzanne node
-    if suzanne_node, ok := self.name_for_node["Suzanne"]; ok {
-        self.scene.local_transforms[suzanne_node] = la.MATRIX4F32_IDENTITY
-    }
-
-    // Find and update Cube nodes (create a line of cubes)
-    if cube_node, ok := self.name_for_node["Cube"]; ok {
-        for x := -3; x < 3; x += 1 {
-            scale := la.matrix4_scale(la.Vector3f32{0.2, 0.2, 0.2})
-            translation := la.matrix4_translate(la.Vector3f32{f32(x), 1, 0})
-            transform := la.matrix_mul(translation, scale)
-
-            // For simplicity, assume one node per cube
-            if x == -3 {
-                // Use the original cube node for x = -3
-                self.scene.local_transforms[cube_node] = transform
-            } else {
-                // Add new nodes for additional cubes
-                new_cube_idx := scene_add_node(
-                    &self.scene,
-                    self.scene.hierarchy[cube_node].parent,
-                    1,
-                )
-                self.scene.local_transforms[u32(new_cube_idx)] = transform
-                // Copy mesh and material
-                self.scene.mesh_for_node[u32(new_cube_idx)] = self.scene.mesh_for_node[cube_node]
-                self.scene.material_for_node[u32(new_cube_idx)] =
-                    self.scene.material_for_node[cube_node]
-            }
-        }
-    }
 
     // Find and draw all root nodes
     for &hierarchy, i in self.scene.hierarchy {
@@ -871,12 +838,26 @@ engine_update_scene :: proc(self: ^Engine) {
         }
     }
 
-    // Other code bellow ---
-
     // Set up Camera
     aspect := f32(self.window_extent.width) / f32(self.window_extent.height)
+    self.scene_data.view = la.matrix4_translate_f32({0, 0, -5})
+    self.scene_data.proj = matrix4_perspective_reverse_z_f32(
+        f32(la.to_radians(70.0)),
+        aspect,
+        0.1,
+        true, // Invert Y to match OpenGL/glTF conventions
+    )
+    self.scene_data.viewproj = la.matrix_mul(self.scene_data.proj, self.scene_data.view)
+
+    // Default lighting parameters
+    self.scene_data.ambient_color = {0.1, 0.1, 0.1, 1.0}
+    self.scene_data.sunlight_color = {1.0, 1.0, 1.0, 1.0}
+    self.scene_data.sunlight_direction = {0, 1, 0.5, 1.0}
 }
 ```
+
+Note that we removed the code responsible for updating the transforms, as this functionality
+will now be handled within `init.odin`.
 
 ## Refactor `init.odin`
 
@@ -901,16 +882,14 @@ this new implementation:
     // Add default material to the materials array
     default_material_idx := append_and_get_idx(&self.scene.materials, self.default_material_data)
 
-    // Root node for the scene
-    root := scene_add_node(&self.scene, -1, 0)
-
     // Process each mesh
     for m, i in self.scene.meshes {
         // Ignore the Sphere for now
         if m.name == "Sphere" {
             continue
         }
-        node_idx := scene_add_mesh_node(&self.scene, root, i, default_material_idx, m.name)
+
+        node_idx := scene_add_mesh_node(&self.scene, -1, i, default_material_idx, m.name)
         self.name_for_node[m.name] = u32(node_idx)
     }
 
@@ -933,6 +912,47 @@ has been delegated to the `Scene`.
 Finally, it stores the node’s index in a map using the mesh’s name as the key, enabling easily
 lookups later, this is how we got the **Suzanne** and **Cube** meshes from
 `engine_update_scene`.
+
+For the initial transformations and duplicated cubes, add this after the `for` that process
+each mesh:
+
+```odin
+// Find and update Suzanne node
+if suzanne_node, suzanne_ok := self.name_for_node["Suzanne"]; suzanne_ok {
+    self.scene.local_transforms[suzanne_node] = la.MATRIX4F32_IDENTITY
+}
+
+// Find and update Cube nodes (create a line of cubes)
+if cube_node, cube_ok := self.name_for_node["Cube"]; cube_ok {
+    for x := -3; x < 3; x += 1 {
+        scale := la.matrix4_scale(la.Vector3f32{0.2, 0.2, 0.2})
+        translation := la.matrix4_translate(la.Vector3f32{f32(x), 1, 0})
+        transform := la.matrix_mul(translation, scale)
+
+        // For simplicity, assume one node per cube
+        if x == -3 {
+            // Use the original cube node for x = -3
+            self.scene.local_transforms[cube_node] = transform
+        } else {
+            // Add new nodes for additional cubes
+            new_cube_idx := scene_add_mesh_node(
+                scene = &self.scene,
+                // highlight-start
+                parent = cube_node,
+                mesh_index = cube_node,
+                material_index = cube_node,
+                // highlight-end
+                name = "Cube",
+            )
+            self.scene.local_transforms[u32(new_cube_idx)] = transform
+        }
+    }
+}
+```
+
+For the cubes, as you can see in the highlighted lines above, we are reusing the same mesh and
+material data from the first cube to create additional instances. The `cube_node` is used as
+the parent, this will create a hierarchy of cubes where each copy is a child of the first one.
 
 To finish, you need to change how to cleanup the scene:
 
