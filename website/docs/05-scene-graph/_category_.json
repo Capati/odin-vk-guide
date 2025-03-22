@@ -3,6 +3,6 @@
 	"position": 8,
 	"link": {
 		"type": "generated-index",
-		"description": "TODO"
+		"description": "This chapter explores the limitations of a traditional pointer-based scene graph (discussed in the previous section) and introduces a refactored, component-based Scene Graph approach."
 	}
 }
