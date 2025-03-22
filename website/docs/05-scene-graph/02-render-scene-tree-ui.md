@@ -24,7 +24,7 @@ engine_ui_definition :: proc(self: ^Engine) {
     v := im.get_main_viewport()
     im.set_next_window_pos({10, 10})
     im.set_next_window_size({250, v.work_size.y - 20})
-    im.begin("Scene Graph", nil, {.No_Focus_On_Appearing, .No_Collapse, .No_Resize})
+    im.begin("Hierarchy", nil, {.No_Focus_On_Appearing, .No_Collapse, .No_Resize})
     @(static) selected_node: i32 = -1
     for &hierarchy, i in self.scene.hierarchy {
         if hierarchy.parent == -1 {
