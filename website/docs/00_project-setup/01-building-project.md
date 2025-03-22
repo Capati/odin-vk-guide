@@ -180,7 +180,8 @@ to use the tasks system.
                 "02_drawing_with_compute",
                 "03_graphics_pipelines",
                 "04_textures_and_engine_architecture",
-                "05_gltf_loading",
+                "05_scene_graph",
+                "06_gltf_loading",
             ]
         }
     ]
