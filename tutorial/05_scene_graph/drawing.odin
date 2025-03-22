@@ -1,6 +1,7 @@
 package vk_guide
 
 // Core
+import "core:log"
 import "core:math"
 
 // Vendor
@@ -205,11 +206,64 @@ engine_draw_background :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: boo
 	return true
 }
 
+render_scene_tree_ui :: proc(scene: ^Scene, #any_int node: i32, selected_node: ^i32) -> i32 {
+	name := scene_get_node_name(scene, node)
+	label := len(name) == 0 ? "NO NODE" : name
+	is_leaf := scene.hierarchy[node].first_child < 0
+	flags: im.Tree_Node_Flags = is_leaf ? {.Leaf} | {.Bullet} : {}
+
+	if node == selected_node^ {
+		flags += {.Selected}
+	}
+
+	// Make the node span the entire width
+	flags += {.Span_Full_Width}
+
+	is_opened := im.tree_node_ex_ptr(&scene.hierarchy[node], flags, "%s", cstring(raw_data(label)))
+
+	// Check for clicks in the entire row area
+	was_clicked := im.is_item_clicked()
+
+	im.push_id_int(node)
+	{
+		if was_clicked {
+			log.debugf("Selected node: %d (%s)", node, label)
+			selected_node^ = node
+		}
+
+		if is_opened {
+			for ch := scene.hierarchy[node].first_child;
+			    ch != -1;
+			    ch = scene.hierarchy[ch].next_sibling {
+				if sub_node := render_scene_tree_ui(scene, ch, selected_node); sub_node > -1 {
+					selected_node^ = sub_node
+				}
+			}
+			im.tree_pop()
+		}
+	}
+	im.pop_id()
+
+	return selected_node^
+}
+
 engine_ui_definition :: proc(self: ^Engine) {
 	// imgui new frame
 	im_glfw.new_frame()
 	im_vk.new_frame()
 	im.new_frame()
+
+	v := im.get_main_viewport()
+	im.set_next_window_pos({0, 0})
+	im.set_next_window_size({250, v.work_size.y})
+	im.begin("Scene Graph", nil, {.No_Focus_On_Appearing, .No_Collapse, .No_Resize})
+	@(static) selected_node: i32 = -1
+	for &hierarchy, i in self.scene.hierarchy {
+		if hierarchy.parent == -1 {
+			render_scene_tree_ui(&self.scene, i, &selected_node)
+		}
+	}
+	im.end()
 
 	if im.begin("Background", nil, {.Always_Auto_Resize}) {
 		im.slider_float("Render scale", &self.render_scale, 0.3, 1.0)

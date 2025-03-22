@@ -88,7 +88,7 @@ is fast and extensible.
 ### 5. Scene Graph (Extra Chapter)
 
 - [x] Improving The Scene Graph
-- [ ] Render Scene Tree UI
+- [x] Render Scene Tree UI
 - [ ] Loading and Saving a Scene Graph
 
 ### 6. GLTF loading

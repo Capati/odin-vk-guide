@@ -251,3 +251,11 @@ scene_draw_node :: proc(scene: ^Scene, #any_int node_index: i32, ctx: ^Draw_Cont
 		child = scene.hierarchy[child].next_sibling
 	}
 }
+
+scene_get_node_name :: proc(self: ^Scene, #any_int node: i32) -> string {
+	name_idx := self.name_for_node[u32(node)]
+	if name_idx == NO_NAME {
+		return ""
+	}
+	return self.node_names[name_idx]
+}
