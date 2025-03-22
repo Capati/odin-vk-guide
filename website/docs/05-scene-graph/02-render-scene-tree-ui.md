@@ -315,6 +315,14 @@ setup_imgui_style :: proc() {
 // odinfmt: enable
 ```
 
+:::tip[]
+
+Style attributions go to **shivang51** from the [bess][] repository.
+
+:::
+
+[bess]: https://github.com/shivang51/bess/tree/main
+
 Next, call `setup_imgui_style()` at the end of the `engine_init_imgui` procedure to
 apply the custom style.
 
