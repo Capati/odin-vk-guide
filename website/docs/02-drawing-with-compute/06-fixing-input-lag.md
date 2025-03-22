@@ -332,13 +332,83 @@ frame updates. To update the FPS, we checks if the FPS value needs updating and 
 Note that ImGui logic is now in `engine_ui_definition`, which is called after `timer_tick(&t)`.
 This change helps keep the main loop clean and organized.
 
+## Acquire Image Earlier
+
+In the current setup, input is polled before acquiring the next image. If the loop’s work
+(e.g., polling and other logic) takes less time than the monitor’s refresh cycle—say, 5 ms—then
+`vk.AcquireNextImageKHR` might still block for the remaining time (e.g., 11.67 ms at 60 Hz).
+
+During this wait:
+
+* The input data collected at the start of the frame becomes "stale."
+* Any new input (e.g., a mouse movement) that occurs during the wait won’t be processed until
+  the next loop iteration.
+* This delay between input polling and rendering creates noticeable lag, making the application
+  feel unresponsive.
+
+Now, let’s improve this by moving image acquire code to the beginning of the loop. First,
+create a new procedure called `engine_acquire_next_image` and move the relevant code from
+`engine_draw` to this new procedure:
+
+```odin title="drawing.odin"
+engine_acquire_next_image :: proc(self: ^Engine) -> (ok: bool) {
+    frame := engine_get_current_frame(self)
+
+    // Wait until the gpu has finished rendering the last frame. Timeout of 1 second
+    vk_check(vk.WaitForFences(self.vk_device, 1, &frame.render_fence, true, 1e9)) or_return
+
+    deletion_queue_flush(&frame.deletion_queue)
+    descriptor_growable_clear_pools(&frame.frame_descriptors)
+
+    vk_check(vk.ResetFences(self.vk_device, 1, &frame.render_fence)) or_return
+
+    // Request image from the swapchain
+    if result := vk.AcquireNextImageKHR(
+        self.vk_device,
+        self.vk_swapchain,
+        max(u64),
+        frame.swapchain_semaphore,
+        0,
+        &frame.swapchain_image_index,
+    ); result == .ERROR_OUT_OF_DATE_KHR {
+        engine_resize_swapchain(self) or_return
+    }
+
+    return true
+}
+```
+
+Now, call `engine_acquire_next_image` at the beginning of the loop:
+
+```odin title="engine.odin"
+for !glfw.WindowShouldClose(self.window) {
+    // highlight-next-line
+    engine_acquire_next_image(self) or_return
+
+    glfw.PollEvents()
+
+    if self.stop_rendering {
+        glfw.WaitEvents()
+        timer_init(&t, monitor_info.refresh_rate) // Reset timer after wait
+        continue
+    }
+
+    // Advance timer and set for FPS update
+    timer_tick(&t)
+```
+
+By flipping the order, the blocking wait from `vk.AcquireNextImageKHR` (e.g., 11.67 ms) happens
+before polling input. This ensures that `glfw.PollEvents()` captures the latest input state
+right before rendering, rather than at the start of the frame.
+
 ## Conclusion
 
 We refactored `engine_run` to fix input lag by pacing the loop with a `Timer`, reducing
 reliance on present mode changes. Previously, unpaced timing with `FIFO` let the loop finish
-early, leaving a long VSync wait with stale input. Now, `glfw.PollEvents()` grabs fresh input,
-`timer_tick(&t)` paces the frame to match the refresh rate (e.g., 16.67 ms), and
+early, leaving a long VSync wait with stale input. Now, by  acquiring the next image before
+polling, we ensure input is captured closer to rendering time, `glfw.PollEvents()` grabs fresh
+input, `timer_tick(&t)` paces the frame to match the refresh rate (e.g., 16.67 ms), and
 `engine_ui_definition` uses this input before `engine_draw`. This minimizes the gap between
-polling and rendering, slashing lag even with `FIFO`. The `Timer` is initialized with the
-monitor’s refresh rate, reset on pause, and supports debug FPS updates. Optionally, switching
-to `MAILBOX` or `IMMEDIATE` can further reduce latency.
+polling and rendering. The `Timer` is initialized with the monitor’s refresh rate, reset on
+pause, and supports debug FPS updates. Optionally, switching to `MAILBOX` or `IMMEDIATE` can
+further reduce latency.

@@ -868,17 +868,7 @@ engine_ui_definition :: proc(self: ^Engine) {
 	im.render()
 }
 
-// Draw loop.
-@(require_results)
-engine_draw :: proc(self: ^Engine) -> (ok: bool) {
-	// Steps:
-	//
-	// 1. Waits for the GPU to finish the previous frame
-	// 2. Acquires the next swapchain image
-	// 3. Records rendering commands into a command buffer
-	// 4. Submits the command buffer to the GPU for execution
-	// 5. Presents the rendered image to the screen
-
+engine_acquire_next_image :: proc(self: ^Engine) -> (ok: bool) {
 	frame := engine_get_current_frame(self)
 
 	// Wait until the gpu has finished rendering the last frame. Timeout of 1 second
@@ -893,12 +883,20 @@ engine_draw :: proc(self: ^Engine) -> (ok: bool) {
 		vk.AcquireNextImageKHR(
 			self.vk_device,
 			self.vk_swapchain,
-			1e9,
+			max(u64),
 			frame.swapchain_semaphore,
 			0,
 			&frame.swapchain_image_index,
 		),
 	) or_return
+
+	return true
+}
+
+// Draw loop.
+@(require_results)
+engine_draw :: proc(self: ^Engine) -> (ok: bool) {
+	frame := engine_get_current_frame(self)
 
 	// The the current command buffer, naming it cmd for shorter writing
 	cmd := frame.main_command_buffer
@@ -1012,6 +1010,8 @@ engine_run :: proc(self: ^Engine) -> (ok: bool) {
 	log.info("Entering main loop...")
 
 	for !glfw.WindowShouldClose(self.window) {
+		engine_acquire_next_image(self) or_return
+
 		glfw.PollEvents()
 
 		if self.stop_rendering {

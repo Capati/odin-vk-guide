@@ -16,16 +16,7 @@ engine_get_current_frame :: #force_inline proc(self: ^Engine) -> ^Frame_Data #no
 	return &self.frames[self.frame_number % FRAME_OVERLAP]
 }
 
-// Draw loop.
-engine_draw :: proc(self: ^Engine) -> (ok: bool) {
-	// Steps:
-	//
-	// 1. Waits for the GPU to finish the previous frame
-	// 2. Acquires the next swapchain image
-	// 3. Records rendering commands into a command buffer
-	// 4. Submits the command buffer to the GPU for execution
-	// 5. Presents the rendered image to the screen
-
+engine_acquire_next_image :: proc(self: ^Engine) -> (ok: bool) {
 	frame := engine_get_current_frame(self)
 
 	// Wait until the gpu has finished rendering the last frame. Timeout of 1 second
@@ -46,6 +37,13 @@ engine_draw :: proc(self: ^Engine) -> (ok: bool) {
 	); result == .ERROR_OUT_OF_DATE_KHR {
 		engine_resize_swapchain(self) or_return
 	}
+
+	return true
+}
+
+// Draw loop.
+engine_draw :: proc(self: ^Engine) -> (ok: bool) {
+	frame := engine_get_current_frame(self)
 
 	// The the current command buffer, naming it cmd for shorter writing
 	cmd := engine_get_current_frame(self).main_command_buffer

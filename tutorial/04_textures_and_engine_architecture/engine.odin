@@ -187,6 +187,8 @@ engine_run :: proc(self: ^Engine) -> (ok: bool) {
 	log.info("Entering main loop...")
 
 	for !glfw.WindowShouldClose(self.window) {
+		engine_acquire_next_image(self) or_return
+
 		glfw.PollEvents()
 
 		if self.stop_rendering {
