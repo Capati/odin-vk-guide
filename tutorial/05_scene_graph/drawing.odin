@@ -206,14 +206,14 @@ render_scene_tree_ui :: proc(scene: ^Scene, #any_int node: i32, selected_node: ^
 	name := scene_get_node_name(scene, node)
 	label := len(name) == 0 ? "NO NODE" : name
 	is_leaf := scene.hierarchy[node].first_child < 0
-	flags: im.Tree_Node_Flags = is_leaf ? {.Leaf} | {.Bullet} : {}
+	flags: im.Tree_Node_Flags = is_leaf ? {.Leaf, .Bullet} : {}
 
 	if node == selected_node^ {
 		flags += {.Selected}
 	}
 
 	// Make the node span the entire width
-	flags += {.Span_Full_Width}
+	flags += {.Span_Full_Width, .Frame_Padding}
 
 	is_opened := im.tree_node_ex_ptr(&scene.hierarchy[node], flags, "%s", cstring(raw_data(label)))
 
@@ -250,9 +250,9 @@ engine_ui_definition :: proc(self: ^Engine) {
 	im.new_frame()
 
 	v := im.get_main_viewport()
-	im.set_next_window_pos({0, 0})
-	im.set_next_window_size({250, v.work_size.y})
-	im.begin("Scene Graph", nil, {.No_Focus_On_Appearing, .No_Collapse, .No_Resize})
+	im.set_next_window_pos({10, 10})
+	im.set_next_window_size({250, v.work_size.y - 20})
+	im.begin("Hierarchy", nil, {.No_Focus_On_Appearing, .No_Collapse, .No_Resize})
 	@(static) selected_node: i32 = -1
 	for &hierarchy, i in self.scene.hierarchy {
 		if hierarchy.parent == -1 {
