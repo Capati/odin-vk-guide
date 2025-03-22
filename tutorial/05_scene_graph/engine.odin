@@ -173,27 +173,25 @@ engine_update_scene :: proc(self: ^Engine) {
 @(require_results)
 engine_run :: proc(self: ^Engine) -> (ok: bool) {
 	monitor_info := get_primary_monitor_info()
-
 	t: Timer
 	timer_init(&t, monitor_info.refresh_rate)
 
 	log.info("Entering main loop...")
 
 	for !glfw.WindowShouldClose(self.window) {
-		engine_acquire_next_image(self) or_return
+		if !self.stop_rendering {
+			engine_acquire_next_image(self) or_return
+		}
 
-		glfw.PollEvents()
+		timer_tick(&t)
+		engine_ui_definition(self)
+		engine_update_scene(self)
 
 		if self.stop_rendering {
 			glfw.WaitEvents()
-			timer_init(&t, monitor_info.refresh_rate) // Reset timer after wait
+			timer_init(&t, monitor_info.refresh_rate)
 			continue
 		}
-
-		// Advance timer and set for FPS update
-		timer_tick(&t)
-
-		engine_ui_definition(self)
 
 		engine_draw(self) or_return
 
@@ -202,6 +200,8 @@ engine_run :: proc(self: ^Engine) -> (ok: bool) {
 				window_update_title_with_fps(self.window, TITLE, timer_get_fps(t))
 			}
 		}
+
+		glfw.PollEvents()
 	}
 
 	log.info("Exiting...")

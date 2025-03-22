@@ -44,8 +44,6 @@ engine_acquire_next_image :: proc(self: ^Engine) -> (ok: bool) {
 
 // Draw loop.
 engine_draw :: proc(self: ^Engine) -> (ok: bool) {
-	engine_update_scene(self)
-
 	frame := engine_get_current_frame(self)
 
 	// The the current command buffer, naming it cmd for shorter writing

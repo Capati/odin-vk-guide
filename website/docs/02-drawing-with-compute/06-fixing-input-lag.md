@@ -401,6 +401,62 @@ By flipping the order, the blocking wait from `vk.AcquireNextImageKHR` (e.g., 11
 before polling input. This ensures that `glfw.PollEvents()` captures the latest input state
 right before rendering, rather than at the start of the frame.
 
+But this create another problem, we first attempt to acquire the next image, then pool events,
+and only afterward checking if rendering should be paused. When the window is minimized,
+acquiring the image might time out before the application can process the minimization event.
+
+To fix this, we restructure the loop to handle rendering state first, ensuring stability during
+minimization while still **allowing engine updates to continue**.
+
+Here’s the improved version:
+
+```odin
+for !glfw.WindowShouldClose(self.window) {
+    // highlight-start
+    if !self.stop_rendering {
+        engine_acquire_next_image(self) or_return
+    }
+    // highlight-end
+
+    timer_tick(&t)
+    engine_ui_definition(self)
+    // highlight-next-line
+    engine_update_scene(self)
+
+    if self.stop_rendering {
+        glfw.WaitEvents()
+        timer_init(&t, monitor_info.refresh_rate)
+        continue
+    }
+
+    engine_draw(self) or_return
+
+    when ODIN_DEBUG {
+        if timer_check_fps_updated(t) {
+            window_update_title_with_fps(self.window, TITLE, timer_get_fps(t))
+        }
+    }
+
+    // highlight-next-line
+    glfw.PollEvents()
+}
+```
+
+The new approach maintains low latency by acquiring the image early, but only when the window
+is visible, while still allowing application logic to run when minimized. This ensures that the
+engine responds to window state changes before attempting any rendering operations that might
+fail when the window is minimized.
+
+:::note[]
+
+We are now calling `engine_update_scene` directly in the main loop. Ensure it is
+removed from `engine_draw` to avoid redundant updates.
+
+:::
+
+Polling events last means the loop uses the previous frame’s state, but the `self.stop_rendering`
+checks ensure rendering only occurs when safe, while updates persist.
+
 ## Conclusion
 
 We refactored `engine_run` to fix input lag by pacing the loop with a `Timer`, reducing
