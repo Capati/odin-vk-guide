@@ -87,6 +87,9 @@ is fast and extensible.
 
 ### 5. Scene Graph (Extra Chapter)
 
+Explores the limitations of a traditional pointer-based scene graph (discussed in the previous
+section) and introduces a refactored, component-based Scene Graph approach.
+
 - [x] Improving The Scene Graph
 - [x] Render Scene Tree UI
 - [ ] Loading and Saving a Scene Graph
