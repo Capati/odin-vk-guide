@@ -123,7 +123,7 @@ create_image_default :: proc(
     }
 
     // Build a image-view for the draw image to use for rendering
-    view_info := imageview_create_info(new_image.image_format, new_image.image, {.COLOR})
+    view_info := imageview_create_info(new_image.image_format, new_image.image, aspect_flag)
 
     vk_check(vk.CreateImageView(self.vk_device, &view_info, nil, &new_image.image_view)) or_return
     defer if !ok {
