@@ -28,7 +28,8 @@
     "@docusaurus/types": "3.7.0"
   },
   "overrides": {
-    "prismjs": "1.30.0"
+    "prismjs": "1.30.0",
+	"image-size": "1.2.1"
   },
   "browserslist": {
     "production": [
