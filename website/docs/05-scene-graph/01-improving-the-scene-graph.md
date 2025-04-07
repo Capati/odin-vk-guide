@@ -616,7 +616,7 @@ Knowing this, the `scene_draw_node` procedure looks like this:
 
 ```odin
 // Draw a specific node and its children.
-draw_node :: proc(scene: ^Scene, #any_int node_index: i32, ctx: ^Draw_Context) {
+scene_draw_node :: proc(scene: ^Scene, #any_int node_index: i32, ctx: ^Draw_Context) {
     // Combine top matrix with node's world transform
     node_matrix := la.matrix_mul(
         scene.local_transforms[node_index],
@@ -654,7 +654,7 @@ draw_node :: proc(scene: ^Scene, #any_int node_index: i32, ctx: ^Draw_Context) {
     // Draw all children
     child := scene.hierarchy[node_index].first_child
     for child != -1 {
-        draw_node(scene, child, ctx)
+        scene_draw_node(scene, child, ctx)
         child = scene.hierarchy[child].next_sibling
     }
 }
