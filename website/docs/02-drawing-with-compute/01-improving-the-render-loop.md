@@ -485,7 +485,7 @@ Lets update our deletion queue to handle the `Allocated_Image`:
 ```odin title="deletion_queue.odin"
 Resource :: union {
     // Higher-level custom resources
-    ^Allocated_Image,
+    Allocated_Image,
 }
 
 deletion_queue_flush :: proc(self: ^Deletion_Queue) {
