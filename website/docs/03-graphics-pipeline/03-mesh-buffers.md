@@ -315,7 +315,7 @@ relevant code with other parts omitted:
 ```odin title="deletion_queue.odin"
 Resource :: union {
     // Higher-level custom resources
-    ^Allocated_Buffer,
+    Allocated_Buffer,
 }
 
 deletion_queue_flush :: proc(queue: ^Deletion_Queue) {
