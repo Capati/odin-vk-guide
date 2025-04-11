@@ -49,9 +49,12 @@ should_skip_file() {
 compile_shader() {
     local file="$1"
 
-	if should_skip_file "$file"; then
-		return 0
-	fi
+    if should_skip_file "$file"; then
+        return 0
+    fi
+
+    local filename=$(basename "$file")
+    local basename="${filename%.*}"
 
     echo "Compiling: $file"
     "$COMPILER" "$file" $COMMON_ARGS -o "../compiled/$basename.spv"
