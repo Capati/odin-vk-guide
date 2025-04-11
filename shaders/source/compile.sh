@@ -58,10 +58,9 @@ compile_shader() {
     return $?
 }
 
-# Function to perform initial compilation of all shaders using workers
+# Function to compile shaders using workers
 compile_all_shaders_parallel() {
     local shader_files=("$@")  # Accept shader files as arguments
-    echo "Compiling ${#shader_files[@]} shaders using $MAX_WORKERS workers..."
 
     local total_files=${#shader_files[@]}
     local successful=0
@@ -117,7 +116,8 @@ while IFS= read -r -d '' file; do
     fi
 done < <(find . -type f -name "*.slang" -print0)
 
-# Initial compilation of all files using workers
+# Initial compilation of all shaders
+echo "Compiling ${#shader_files[@]} shaders using $MAX_WORKERS workers..."
 compile_all_shaders_parallel "${shader_files[@]}"
 initial_compile_status=$?
 
@@ -136,42 +136,54 @@ mkdir -p "$hash_dir"
 
 # Store initial state of each file
 while IFS= read -r -d '' file; do
-	# Skip files that start with inc_
-	if should_skip_file "$file"; then
-		continue
-	fi
     stat -c "%s%Y" "$file" > "$hash_dir/$file.hash"
 done < <(find . -type f -name "*.slang" -print0)
 
-# Watch loop
+# Watch loop with parallel compilation
 while true; do
     changes=0
+    declare -a files_to_compile=()
 
     while IFS= read -r -d '' file; do
-        # Skip files that start with inc_
-		if should_skip_file "$file"; then
-			continue
-		fi
+        filename=$(basename "$file")
+        basename="${filename%.*}"
 
         current_hash=$(stat -c "%s%Y" "$file")
-        stored_hash=$(cat "$hash_dir/$file.hash" 2>/dev/null || echo "")
+        stored_hash=$(cat "$hash_dir/$filename.hash" 2>/dev/null || echo "")
 
         if [ "$current_hash" != "$stored_hash" ]; then
-            echo "Change detected in: $file"
-            echo "Compiling: $file"
+            echo "Change detected in: $filename"
+            echo "$current_hash" > "$hash_dir/$filename.hash"
 
-            "$COMPILER" "$file" $COMMON_ARGS -o "../compiled/$file.spv"
+            # If it's an include file, find all files that need recompilation
+            if [[ "$basename" == inc_* ]]; then
+                # Find all shader files that include this file
+                while IFS= read -r -d '' shader_file; do
+                    shader_filename=$(basename "$shader_file")
+                    shader_basename="${shader_filename%.*}"
 
-            if [ $? -ne 0 ]; then
-                echo "Failed to compile $file"
+                    # Skip other include files
+                    if [[ "$shader_basename" != inc_* ]]; then
+                        # Check if this shader includes our changed include file
+                        if grep -q "#include.*$filename" "$shader_file"; then
+                            echo "Queueing for compilation: $shader_filename (depends on $filename)"
+                            files_to_compile+=("$shader_file")
+                        fi
+                    fi
+                done < <(find . -type f -name "*.slang" -print0)
             else
-                echo "Successfully compiled $file"
+                # Directly queue changed shader file for compilation
+                files_to_compile+=("$file")
             fi
 
-            echo "$current_hash" > "$hash_dir/$file.hash"
             changes=1
         fi
     done < <(find . -type f -name "*.slang" -print0)
+
+    # Compile all queued files in parallel if there are changes
+    if [ ${#files_to_compile[@]} -gt 0 ]; then
+        compile_all_shaders_parallel "${files_to_compile[@]}"
+    fi
 
     if [ $changes -eq 0 ]; then
         sleep 1
