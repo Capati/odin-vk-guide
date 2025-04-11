@@ -35,7 +35,7 @@ errors=0
 
 COMMON_ARGS="-entry main -profile glsl_450 -target spirv"
 
-find . -type f \( -name "*.slang" \) | while read -r file; do
+while IFS= read -r -d '' file; do
     filename=$(basename "$file")
     basename="${filename%.*}"
 
@@ -54,7 +54,7 @@ find . -type f \( -name "*.slang" \) | while read -r file; do
     else
         ((count++))
     fi
-done
+done < <(find . -type f -name "*.slang" -print0)
 
 echo "Compilation complete:"
 echo "Successfully compiled: $count files"
@@ -77,23 +77,23 @@ hash_dir="/tmp/shader_watch"
 mkdir -p "$hash_dir"
 
 # Store initial state of each file
-find . -type f \( -name "*.slang" \) | while read -r file; do
+while IFS= read -r -d '' file; do
     filename=$(basename "$file")
     basename="${filename%.*}"
 
     # Skip files that start with inc_
     if [[ "$basename" == inc_* ]]; then
         continue
-    }
+    fi
 
     stat -c "%s%Y" "$file" > "$hash_dir/$filename.hash"
-done
+done < <(find . -type f -name "*.slang" -print0)
 
 # Watch loop
 while true; do
     changes=0
 
-    find . -type f \( -name "*.slang" \) | while read -r file; do
+    while IFS= read -r -d '' file; do
         filename=$(basename "$file")
         basename="${filename%.*}"
 
@@ -120,7 +120,7 @@ while true; do
             echo "$current_hash" > "$hash_dir/$filename.hash"
             changes=1
         fi
-    done
+    done < <(find . -type f -name "*.slang" -print0)
 
     if [ $changes -eq 0 ]; then
         sleep 1
