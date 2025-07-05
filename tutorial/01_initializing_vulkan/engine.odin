@@ -199,6 +199,11 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 		vkb.destroy_surface(self.vkb.instance, self.vk_surface)
 	}
 
+	// Vulkan 1.1 features
+	features_11 := vk.PhysicalDeviceVulkan11Features {
+		shaderDrawParameters = true,
+	}
+
 	// Vulkan 1.2 features
 	features_12 := vk.PhysicalDeviceVulkan12Features {
 		// Allows shaders to directly access buffer memory using GPU addresses
@@ -224,6 +229,7 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 	vkb.selector_set_minimum_version(&selector, vk.API_VERSION_1_3)
 	vkb.selector_set_required_features_13(&selector, features_13)
 	vkb.selector_set_required_features_12(&selector, features_12)
+	vkb.selector_set_required_features_11(&selector, features_11)
 	vkb.selector_set_surface(&selector, self.vk_surface)
 
 	self.vkb.physical_device = vkb.select_physical_device(&selector) or_return
