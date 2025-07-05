@@ -790,11 +790,11 @@ engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
     }
     // odinfmt: enable
 
-    rectangle := upload_mesh(self, rect_indices[:], rect_vertices[:]) or_return
+    self.rectangle := upload_mesh(self, rect_indices[:], rect_vertices[:]) or_return
 
     // Delete the rectangle data on engine shutdown
-    deletion_queue_push(&self.main_deletion_queue, &rectangle.index_buffer)
-    deletion_queue_push(&self.main_deletion_queue, &rectangle.vertex_buffer)
+    deletion_queue_push(&self.main_deletion_queue, self.rectangle.index_buffer)
+    deletion_queue_push(&self.main_deletion_queue, self.rectangle.vertex_buffer)
 
     return true
 }
