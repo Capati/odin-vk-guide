@@ -350,7 +350,7 @@ Now, let’s improve this by moving image acquire code to the beginning of the l
 create a new procedure called `engine_acquire_next_image` and move the relevant code from
 `engine_draw` to this new procedure:
 
-```odin title="drawing.odin"
+```odin title="engine.odin"
 engine_acquire_next_image :: proc(self: ^Engine) -> (ok: bool) {
     frame := engine_get_current_frame(self)
 
@@ -358,21 +358,18 @@ engine_acquire_next_image :: proc(self: ^Engine) -> (ok: bool) {
     vk_check(vk.WaitForFences(self.vk_device, 1, &frame.render_fence, true, 1e9)) or_return
 
     deletion_queue_flush(&frame.deletion_queue)
-    descriptor_growable_clear_pools(&frame.frame_descriptors)
 
     vk_check(vk.ResetFences(self.vk_device, 1, &frame.render_fence)) or_return
 
     // Request image from the swapchain
-    if result := vk.AcquireNextImageKHR(
+    vk_check(vk.AcquireNextImageKHR(
         self.vk_device,
         self.vk_swapchain,
         max(u64),
         frame.swapchain_semaphore,
         0,
         &frame.swapchain_image_index,
-    ); result == .ERROR_OUT_OF_DATE_KHR {
-        engine_resize_swapchain(self) or_return
-    }
+    )) or_return
 
     return true
 }
