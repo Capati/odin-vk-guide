@@ -950,6 +950,15 @@ engine_draw :: proc(self: ^Engine) -> (ok: bool) {
 	// This will put the image we just rendered to into the visible window. we want to wait on
 	// the `ready_for_present_semaphore` for that, as its necessary that drawing commands
 	// have finished before the image is displayed to the user.
+	present_info := vk.PresentInfoKHR {
+		sType              = .PRESENT_INFO_KHR,
+		pSwapchains        = &self.vk_swapchain,
+		swapchainCount     = 1,
+		pWaitSemaphores    = &ready_for_present_semaphore,
+		waitSemaphoreCount = 1,
+		pImageIndices      = &swapchain_image_index,
+	}
+
 	vk_check(vk.QueuePresentKHR(self.graphics_queue, &present_info)) or_return
 
 	// Increase the number of frames drawn

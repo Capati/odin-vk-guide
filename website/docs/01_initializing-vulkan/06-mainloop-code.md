@@ -452,8 +452,8 @@ wait_info := semaphore_submit_info({.COLOR_ATTACHMENT_OUTPUT_KHR}, frame.swapcha
 
 submit := submit_info(&cmd_info, &signal_info, &wait_info)
 
-	// Submit command buffer to the queue and execute it. `render_fence` will now
-	// block until the graphic commands finish execution.
+// Submit command buffer to the queue and execute it. `render_fence` will now
+// block until the graphic commands finish execution.
 vk_check(vk.QueueSubmit2(self.graphics_queue, 1, &submit, frame.render_fence)) or_return
 ```
 
