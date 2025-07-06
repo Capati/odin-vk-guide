@@ -19,7 +19,6 @@ Frame_Data :: struct {
 	command_pool:        vk.CommandPool,
 	main_command_buffer: vk.CommandBuffer,
 	swapchain_semaphore: vk.Semaphore,
-	render_semaphore:    vk.Semaphore,
 	render_fence:        vk.Fence,
 }
 
@@ -118,7 +117,6 @@ engine_cleanup :: proc(self: ^Engine) {
 
 		// Destroy sync objects
 		vk.DestroyFence(self.vk_device, frame.render_fence, nil)
-		vk.DestroySemaphore(self.vk_device, frame.render_semaphore, nil)
 		vk.DestroySemaphore(self.vk_device, frame.swapchain_semaphore, nil)
 	}
 

@@ -264,7 +264,6 @@ engine_cleanup :: proc(self: ^Engine) {
 
         // Destroy sync objects
         vk.DestroyFence(self.vk_device, frame.render_fence, nil)
-        vk.DestroySemaphore(self.vk_device, frame.render_semaphore, nil)
         vk.DestroySemaphore(self.vk_device, frame.swapchain_semaphore, nil)
 
         // Flush and destroy the peer frame deletion queue
