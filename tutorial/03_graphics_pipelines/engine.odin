@@ -18,7 +18,6 @@ Frame_Data :: struct {
 	command_pool:          vk.CommandPool,
 	main_command_buffer:   vk.CommandBuffer,
 	swapchain_semaphore:   vk.Semaphore,
-	render_semaphore:      vk.Semaphore,
 	swapchain_image_index: u32,
 	render_fence:          vk.Fence,
 	deletion_queue:        Deletion_Queue,
@@ -70,6 +69,7 @@ Engine :: struct {
 	swapchain_format:             vk.Format,
 	swapchain_images:             []vk.Image,
 	swapchain_image_views:        []vk.ImageView,
+	swapchain_image_semaphores:   []vk.Semaphore,
 
 	// Frame management
 	frames:                       [FRAME_OVERLAP]Frame_Data,

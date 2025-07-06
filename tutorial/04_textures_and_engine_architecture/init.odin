@@ -275,6 +275,7 @@ engine_create_swapchain :: proc(self: ^Engine, width, height: u32) -> (ok: bool)
 	self.swapchain_extent = swapchain.extent
 	self.swapchain_images = vkb.swapchain_get_images(self.vkb.swapchain) or_return
 	self.swapchain_image_views = vkb.swapchain_get_image_views(self.vkb.swapchain) or_return
+	self.swapchain_image_semaphores = make([]vk.Semaphore, len(self.swapchain_images))[:]
 
 	return true
 }
@@ -293,6 +294,12 @@ engine_resize_swapchain :: proc(self: ^Engine) -> (ok: bool) {
 engine_destroy_swapchain :: proc(self: ^Engine) {
 	vkb.destroy_swapchain(self.vkb.swapchain)
 	vkb.swapchain_destroy_image_views(self.vkb.swapchain, self.swapchain_image_views)
+
+	for semaphore in self.swapchain_image_semaphores {
+		vk.DestroySemaphore(self.vk_device, semaphore, nil)
+	}
+
+	delete(self.swapchain_image_semaphores)
 	delete(self.swapchain_image_views)
 	delete(self.swapchain_images)
 }
@@ -455,10 +462,9 @@ engine_init_commands :: proc(self: ^Engine) -> (ok: bool) {
 }
 
 engine_init_sync_structures :: proc(self: ^Engine) -> (ok: bool) {
-	// Create synchronization structures, one fence to control when the gpu has
-	// finished rendering the frame, and 2 semaphores to sincronize rendering with
-	// swapchain. We want the fence to start signalled so we can wait on it on the
-	// first frame
+	// Create synchronization structures, one fence to control when the gpu has finished
+	// rendering the frame, and a semaphore to synchronize rendering with swapchain. We want
+	// the fence to start signaled so we can wait on it on the first frame.
 	fence_create_info := fence_create_info({.SIGNALED})
 	semaphore_create_info := semaphore_create_info()
 
@@ -475,13 +481,12 @@ engine_init_sync_structures :: proc(self: ^Engine) -> (ok: bool) {
 				&frame.swapchain_semaphore,
 			),
 		) or_return
+	}
+
+	// Create a semaphore for each image in the swapchain.
+	for &semaphore in self.swapchain_image_semaphores {
 		vk_check(
-			vk.CreateSemaphore(
-				self.vk_device,
-				&semaphore_create_info,
-				nil,
-				&frame.render_semaphore,
-			),
+			vk.CreateSemaphore(self.vk_device, &semaphore_create_info, nil, &semaphore),
 		) or_return
 	}
 

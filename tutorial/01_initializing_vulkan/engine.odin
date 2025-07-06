@@ -27,26 +27,27 @@ FRAME_OVERLAP :: 2
 
 Engine :: struct {
 	// Platform
-	is_initialized:        bool,
-	stop_rendering:        bool,
-	window_extent:         vk.Extent2D,
-	window:                glfw.WindowHandle,
+	is_initialized:             bool,
+	stop_rendering:             bool,
+	window_extent:              vk.Extent2D,
+	window:                     glfw.WindowHandle,
 
 	// GPU Context
-	vk_instance:           vk.Instance,
-	vk_physical_device:    vk.PhysicalDevice,
-	vk_surface:            vk.SurfaceKHR,
-	vk_device:             vk.Device,
+	vk_instance:                vk.Instance,
+	vk_physical_device:         vk.PhysicalDevice,
+	vk_surface:                 vk.SurfaceKHR,
+	vk_device:                  vk.Device,
 
 	// Swapchain
-	vk_swapchain:          vk.SwapchainKHR,
-	swapchain_format:      vk.Format,
-	swapchain_extent:      vk.Extent2D,
-	swapchain_images:      []vk.Image,
-	swapchain_image_views: []vk.ImageView,
+	vk_swapchain:               vk.SwapchainKHR,
+	swapchain_format:           vk.Format,
+	swapchain_extent:           vk.Extent2D,
+	swapchain_images:           []vk.Image,
+	swapchain_image_views:      []vk.ImageView,
+	swapchain_image_semaphores: []vk.Semaphore,
 
 	// vk-bootstrap
-	vkb:                   struct {
+	vkb:                        struct {
 		instance:        ^vkb.Instance,
 		physical_device: ^vkb.Physical_Device,
 		device:          ^vkb.Device,
@@ -54,10 +55,10 @@ Engine :: struct {
 	},
 
 	// Frame resources
-	frames:                [FRAME_OVERLAP]Frame_Data,
-	frame_number:          int,
-	graphics_queue:        vk.Queue,
-	graphics_queue_family: u32,
+	frames:                     [FRAME_OVERLAP]Frame_Data,
+	frame_number:               int,
+	graphics_queue:             vk.Queue,
+	graphics_queue_family:      u32,
 }
 
 @(private)
@@ -269,6 +270,7 @@ engine_create_swapchain :: proc(self: ^Engine, extent: vk.Extent2D) -> (ok: bool
 
 	self.swapchain_images = vkb.swapchain_get_images(self.vkb.swapchain) or_return
 	self.swapchain_image_views = vkb.swapchain_get_image_views(self.vkb.swapchain) or_return
+	self.swapchain_image_semaphores = make([]vk.Semaphore, len(self.swapchain_images))[:]
 
 	return true
 }
@@ -276,6 +278,12 @@ engine_create_swapchain :: proc(self: ^Engine, extent: vk.Extent2D) -> (ok: bool
 engine_destroy_swapchain :: proc(self: ^Engine) {
 	vkb.destroy_swapchain(self.vkb.swapchain)
 	vkb.swapchain_destroy_image_views(self.vkb.swapchain, self.swapchain_image_views)
+
+	for semaphore in self.swapchain_image_semaphores {
+		vk.DestroySemaphore(self.vk_device, semaphore, nil)
+	}
+
+	delete(self.swapchain_image_semaphores)
 	delete(self.swapchain_image_views)
 	delete(self.swapchain_images)
 }
@@ -324,8 +332,8 @@ engine_init_commands :: proc(self: ^Engine) -> (ok: bool) {
 @(require_results)
 engine_init_sync_structures :: proc(self: ^Engine) -> (ok: bool) {
 	// Create synchronization structures, one fence to control when the gpu has finished
-	// rendering the frame, and 2 semaphores to sincronize rendering with swapchain. We want
-	// the fence to start signalled so we can wait on it on the first frame
+	// rendering the frame, and a semaphore to synchronize rendering with swapchain. We want
+	// the fence to start signaled so we can wait on it on the first frame.
 	fence_create_info := fence_create_info({.SIGNALED})
 	semaphore_create_info := semaphore_create_info()
 
@@ -342,13 +350,12 @@ engine_init_sync_structures :: proc(self: ^Engine) -> (ok: bool) {
 				&frame.swapchain_semaphore,
 			),
 		) or_return
+	}
+
+	// Create a semaphore for each image in the swapchain.
+	for &semaphore in self.swapchain_image_semaphores {
 		vk_check(
-			vk.CreateSemaphore(
-				self.vk_device,
-				&semaphore_create_info,
-				nil,
-				&frame.render_semaphore,
-			),
+			vk.CreateSemaphore(self.vk_device, &semaphore_create_info, nil, &semaphore),
 		) or_return
 	}
 
@@ -452,32 +459,33 @@ engine_draw :: proc(self: ^Engine) -> (ok: bool) {
 	// Finalize the command buffer (we can no longer add commands, but it can now be executed)
 	vk_check(vk.EndCommandBuffer(cmd)) or_return
 
-	// Prepare the submission to the queue. we want to wait on the _presentSemaphore, as that
-	// semaphore is signaled when the swapchain is ready we will signal the _renderSemaphore,
-	// to signal that rendering has finished
+	// Prepare the submission to the queue. we want to wait on the `swapchain_semaphore`, as that
+	// semaphore is signaled when the swapchain is ready. We will signal the
+	// `ready_for_present_semaphore` to signal that rendering has finished.
 
-	render_semaphore := engine_get_current_frame(self).render_semaphore
+	frame := engine_get_current_frame(self)
+	ready_for_present_semaphore := self.swapchain_image_semaphores[frame.swapchain_image_index]
 
 	cmd_info := command_buffer_submit_info(cmd)
-	signal_info := semaphore_submit_info({.ALL_GRAPHICS}, render_semaphore)
+	signal_info := semaphore_submit_info({.ALL_GRAPHICS}, ready_for_present_semaphore)
 	wait_info := semaphore_submit_info({.COLOR_ATTACHMENT_OUTPUT_KHR}, swapchain_semaphore)
 
 	submit := submit_info(&cmd_info, &signal_info, &wait_info)
 
-	// Submit command buffer to the queue and execute it. _renderFence will now block until the
-	// graphic commands finish execution
+	// Submit command buffer to the queue and execute it. `render_fence` will now block until the
+	// graphic commands finish execution.
 	vk_check(vk.QueueSubmit2(self.graphics_queue, 1, &submit, render_fence)) or_return
 
 	// Prepare present
 	//
-	// this will put the image we just rendered to into the visible window. we want to wait on
-	// the render_semaphore for that, as its necessary that drawing commands have finished
-	// before the image is displayed to the user
+	// This will put the image we just rendered to into the visible window. we want to wait on
+	// the `ready_for_present_semaphore` for that, as its necessary that drawing commands
+	// have finished before the image is displayed to the user.
 	present_info := vk.PresentInfoKHR {
 		sType              = .PRESENT_INFO_KHR,
 		pSwapchains        = &self.vk_swapchain,
 		swapchainCount     = 1,
-		pWaitSemaphores    = &render_semaphore,
+		pWaitSemaphores    = &ready_for_present_semaphore,
 		waitSemaphoreCount = 1,
 		pImageIndices      = &swapchain_image_index,
 	}

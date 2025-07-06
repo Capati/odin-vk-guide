@@ -123,31 +123,32 @@ engine_draw :: proc(self: ^Engine) -> (ok: bool) {
 	// Finalize the command buffer (we can no longer add commands, but it can now be executed)
 	vk_check(vk.EndCommandBuffer(cmd)) or_return
 
-	// Prepare the submission to the queue. we want to wait on the
-	// `swapchain_semaphore`, as that semaphore is signaled when the swapchain is
-	// ready we will signal the `render_semaphore`, to signal that rendering has
-	// finished
+	// Prepare the submission to the queue. we want to wait on the `swapchain_semaphore`, as that
+	// semaphore is signaled when the swapchain is ready. We will signal the
+	// `ready_for_present_semaphore` to signal that rendering has finished.
+
+	ready_for_present_semaphore := self.swapchain_image_semaphores[frame.swapchain_image_index]
 
 	cmd_info := command_buffer_submit_info(cmd)
-	signal_info := semaphore_submit_info({.ALL_GRAPHICS}, frame.render_semaphore)
+	signal_info := semaphore_submit_info({.ALL_GRAPHICS}, ready_for_present_semaphore)
 	wait_info := semaphore_submit_info({.COLOR_ATTACHMENT_OUTPUT_KHR}, frame.swapchain_semaphore)
 
 	submit := submit_info(&cmd_info, &signal_info, &wait_info)
 
-	// Submit command buffer to the queue and execute it. _renderFence will now
-	// block until the graphic commands finish execution
+	// Submit command buffer to the queue and execute it. `render_fence` will now
+	// block until the graphic commands finish execution.
 	vk_check(vk.QueueSubmit2(self.graphics_queue, 1, &submit, frame.render_fence)) or_return
 
 	// Prepare present
 	//
-	// this will put the image we just rendered to into the visible window. we
-	// want to wait on the `render_semaphore` for that, as its necessary that
-	// drawing commands have finished before the image is displayed to the user
+	// This will put the image we just rendered to into the visible window. we want to wait on
+	// the `ready_for_present_semaphore` for that, as its necessary that drawing commands
+	// have finished before the image is displayed to the user.
 	present_info := vk.PresentInfoKHR {
 		sType              = .PRESENT_INFO_KHR,
 		pSwapchains        = &self.vk_swapchain,
 		swapchainCount     = 1,
-		pWaitSemaphores    = &frame.render_semaphore,
+		pWaitSemaphores    = &ready_for_present_semaphore,
 		waitSemaphoreCount = 1,
 		pImageIndices      = &frame.swapchain_image_index,
 	}
