@@ -275,6 +275,15 @@ engine_create_swapchain :: proc(self: ^Engine, width, height: u32) -> (ok: bool)
 	self.swapchain_images = vkb.swapchain_get_images(self.vkb.swapchain) or_return
 	self.swapchain_image_views = vkb.swapchain_get_image_views(self.vkb.swapchain) or_return
 	self.swapchain_image_semaphores = make([]vk.Semaphore, len(self.swapchain_images))[:]
+	defer if !ok do delete(self.swapchain_image_semaphores)
+
+	// These need to be created here so that they are recreated when we resize.
+	semaphore_create_info := semaphore_create_info()
+	for &semaphore in self.swapchain_image_semaphores {
+		vk_check(
+			vk.CreateSemaphore(self.vk_device, &semaphore_create_info, nil, &semaphore),
+		) or_return
+	}
 
 	return true
 }
@@ -479,13 +488,6 @@ engine_init_sync_structures :: proc(self: ^Engine) -> (ok: bool) {
 				nil,
 				&frame.swapchain_semaphore,
 			),
-		) or_return
-	}
-
-	// Create a semaphore for each image in the swapchain.
-	for &semaphore in self.swapchain_image_semaphores {
-		vk_check(
-			vk.CreateSemaphore(self.vk_device, &semaphore_create_info, nil, &semaphore),
 		) or_return
 	}
 
