@@ -31,7 +31,7 @@ Fortunately, Odin includes a `Makefile` script to simplify this process, located
 system:
 
 ```bash
-make linux   # For Linux
+make unix   # For Linux
 make darwin  # For macOS
 ```
 
