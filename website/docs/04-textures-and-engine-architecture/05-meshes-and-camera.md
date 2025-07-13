@@ -407,9 +407,6 @@ engine_draw :: proc(self: ^Engine) -> (ok: bool) {
     // Other code bellow ---
 
     frame := engine_get_current_frame(self)
-
-    // Wait until the gpu has finished rendering the last frame. Timeout of 1 second
-    vk_check(vk.WaitForFences(self.vk_device, 1, &frame.render_fence, true, 1e9)) or_return
 }
 ```
 
