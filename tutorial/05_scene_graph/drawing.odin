@@ -28,15 +28,18 @@ engine_acquire_next_image :: proc(self: ^Engine) -> (ok: bool) {
 	vk_check(vk.ResetFences(self.vk_device, 1, &frame.render_fence)) or_return
 
 	// Request image from the swapchain
-	if result := vk.AcquireNextImageKHR(
+	result := vk.AcquireNextImageKHR(
 		self.vk_device,
 		self.vk_swapchain,
 		max(u64),
 		frame.swapchain_semaphore,
 		0,
 		&frame.swapchain_image_index,
-	); result == .ERROR_OUT_OF_DATE_KHR {
-		engine_resize_swapchain(self) or_return
+	)
+
+	// Just ignore these errors.
+	if result != .ERROR_OUT_OF_DATE_KHR && result != .SUBOPTIMAL_KHR {
+		vk_check(result) or_return
 	}
 
 	return true
@@ -152,9 +155,12 @@ engine_draw :: proc(self: ^Engine) -> (ok: bool) {
 		pImageIndices      = &frame.swapchain_image_index,
 	}
 
-	if result := vk.QueuePresentKHR(self.graphics_queue, &present_info);
-	   result == .ERROR_OUT_OF_DATE_KHR {
+	result := vk.QueuePresentKHR(self.graphics_queue, &present_info)
+
+	if result == .ERROR_OUT_OF_DATE_KHR || result == .SUBOPTIMAL_KHR {
 		engine_resize_swapchain(self) or_return
+	} else {
+		vk_check(result) or_return
 	}
 
 	// Increase the number of frames drawn
