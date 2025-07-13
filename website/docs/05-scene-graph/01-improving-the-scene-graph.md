@@ -512,7 +512,7 @@ scene_add_mesh_node :: proc(
 
     // Add name if provided
     if len(name) > 0 {
-        name_idx := append_and_get_id(&scene.node_names, name)
+        name_idx := append_and_get_idx(&scene.node_names, name)
         scene.name_for_node[u32(node)] = name_idx
     }
 
