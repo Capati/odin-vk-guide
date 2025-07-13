@@ -500,7 +500,11 @@ engine_init_sync_structures :: proc(self: ^Engine) -> (ok: bool) {
 
 engine_init_descriptors :: proc(self: ^Engine) -> (ok: bool) {
 	// Create a descriptor pool that will hold 10 sets with 1 image each
-	sizes := []Pool_Size_Ratio{{.STORAGE_IMAGE, 1}, {.UNIFORM_BUFFER, 1}}
+	sizes := []Pool_Size_Ratio {
+		{.STORAGE_IMAGE, 1},
+		{.UNIFORM_BUFFER, 1},
+		{.COMBINED_IMAGE_SAMPLER, 1},
+	}
 
 	descriptor_allocator_init_pool(
 		&self.global_descriptor_allocator,
