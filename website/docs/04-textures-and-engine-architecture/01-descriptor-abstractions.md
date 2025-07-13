@@ -55,18 +55,6 @@ Descriptor_Allocator_Growable :: struct {
 descriptor_growable_init :: proc(
     self: ^Descriptor_Allocator_Growable,
     device: vk.Device,
-    initial_sets: u32,
-    pool_ratios: []Pool_Size_Ratio,
-    allocator := context.allocator,
-) -> (
-    ok: bool,
-) {
-    return
-}
-
-descriptor_growable_init :: proc(
-    self: ^Descriptor_Allocator_Growable,
-    device: vk.Device,
     max_sets: u32,
     pool_ratios: []Pool_Size_Ratio,
 ) -> (
