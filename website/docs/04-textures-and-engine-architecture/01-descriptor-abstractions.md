@@ -55,18 +55,6 @@ Descriptor_Allocator_Growable :: struct {
 descriptor_growable_init :: proc(
     self: ^Descriptor_Allocator_Growable,
     device: vk.Device,
-    initial_sets: u32,
-    pool_ratios: []Pool_Size_Ratio,
-    allocator := context.allocator,
-) -> (
-    ok: bool,
-) {
-    return
-}
-
-descriptor_growable_init :: proc(
-    self: ^Descriptor_Allocator_Growable,
-    device: vk.Device,
     max_sets: u32,
     pool_ratios: []Pool_Size_Ratio,
 ) -> (
@@ -708,7 +696,6 @@ a single descriptor set for all objects so there isnt any overhead of managing i
     descriptor_layout_builder_add_binding(&builder, 0, .UNIFORM_BUFFER)
     self.gpu_scene_data_descriptor_layout = descriptor_layout_builder_build(
         &builder,
-        self.vk_device,
         {.VERTEX, .FRAGMENT},
     ) or_return
 }
@@ -746,7 +733,7 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
 
     // Add it to the deletion queue of this frame so it gets deleted once its been used
     frame := engine_get_current_frame(self)
-    deletion_queue_push(&frame.deletion_queue, &gpu_scene_data_buffer)
+    deletion_queue_push(&frame.deletion_queue, gpu_scene_data_buffer)
 
     // Write the buffer
     scene_uniform_data := cast(^GPU_Scene_Data)gpu_scene_data_buffer.info.mapped_data
