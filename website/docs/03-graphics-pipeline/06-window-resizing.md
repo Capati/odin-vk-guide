@@ -17,7 +17,7 @@ For efficiency, we will not be reallocating the draw image. Right now we only ha
 image and depth image, but on a more developed engine it could be significantly more, and
 re-creating all that can be a considerable hassle. Instead, we create the draw and depth image
 at startup with a preset size, and then draw into a section of it if the window is small, or
-scale it up if the window is bigger. As we arent reallocating but just rendering into a corner,
+scale it up if the window is bigger. As we aren't reallocating but just rendering into a corner,
 we can also use this same logic to perform dynamic resolution, which is a useful way of scaling
 performance, and can be handy for debugging. We are copying the rendering from the draw image
 into the swapchain with `vk.CmdBlit`, and that one performs scaling so it will work well here.
@@ -29,36 +29,45 @@ directly, so it will always render at native resolution.
 GLFW by default allows us to resize the window. Run the engine and try to resize the window.
 
 It should give an error on the `vk_check` procedure we have on either `vk.AcquireNextImageKHR`
-or `vk.QueuePresentKHR`. The error will be `ERROR_OUT_OF_DATE_KHR`. So to handle the resize, we
-need to stop the rendering if we see that error, and rebuild the swapchain when that happens.
+or `vk.QueuePresentKHR`. The error will be `ERROR_OUT_OF_DATE_KHR` for some configurations,
+or `SUBOPTIMAL_KHR` for others. So to handle the resize, we need to stop the rendering if
+we see that error, and rebuild the swapchain when that happens.
 
 On the `engine_draw()` procedure, replace the call to `vk.AcquireNextImageKHR` to check the
 error code.
 
 ```odin
 // Request image from the swapchain
-if result := vk.AcquireNextImageKHR(
-    self.vk_device,
-    self.vk_swapchain,
-    max(u64),
-    frame.swapchain_semaphore,
-    0,
-    &frame.swapchain_image_index,
-); result == .ERROR_OUT_OF_DATE_KHR {
-    engine_resize_swapchain(self) or_return
+result := vk.AcquireNextImageKHR(
+  self.vk_device,
+  self.vk_swapchain,
+  max(u64),
+  frame.swapchain_semaphore,
+  0,
+  &frame.swapchain_image_index,
+)
+
+// Just ignore these errors.
+if result != .ERROR_OUT_OF_DATE_KHR && result != .SUBOPTIMAL_KHR {
+  vk_check(result) or_return
 }
 ```
 
-If .`ERROR_OUT_OF_DATE_KHR` is returned, we call `engine_resize_swapchain` to recreate the
-swapchain with updated window dimensions. This ensures the rendering system remains in sync
-with the current display configuration.
+We ignore the errors `.ERROR_OUT_OF_DATE_KHR` or `.SUBOPTIMAL_KHR` if they are returned.
+Otherwise, we check for any remaining errors.
 
-Also replace the call to `vk.QueuePresentKHR` at the end in the same way.
+Also replace the call to `vk.QueuePresentKHR` at the end in a similar way.
+Here, we resize the swapchain if we get the `.ERROR_OUT_OF_DATE_KHR` or `.SUBOPTIMAL_KHR` errors.
+Note that we should only do this after calling `vk.QueuePresentKHR`. Otherwise, we run the
+risk of semaphores never getting signalled.
 
 ```odin
-if result := vk.QueuePresentKHR(self.graphics_queue, &present_info);
-    result == .ERROR_OUT_OF_DATE_KHR {
-    engine_resize_swapchain(self) or_return
+result := vk.QueuePresentKHR(self.graphics_queue, &present_info)
+
+if result == .ERROR_OUT_OF_DATE_KHR || result == .SUBOPTIMAL_KHR {
+  engine_resize_swapchain(self) or_return
+} else {
+  vk_check(result) or_return
 }
 ```
 
