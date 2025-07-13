@@ -733,7 +733,7 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
 
     // Add it to the deletion queue of this frame so it gets deleted once its been used
     frame := engine_get_current_frame(self)
-    deletion_queue_push(&frame.deletion_queue, &gpu_scene_data_buffer)
+    deletion_queue_push(&frame.deletion_queue, gpu_scene_data_buffer)
 
     // Write the buffer
     scene_uniform_data := cast(^GPU_Scene_Data)gpu_scene_data_buffer.info.mapped_data
