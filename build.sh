@@ -4,7 +4,16 @@
 set -e
 
 # Set default values
-ARGS="-debug -collection:libs=./libs/"
+ARGS="\
+	-vet \
+	-debug \
+	-vet-cast \
+	-vet-style \
+	-vet-using-param \
+	-strict-style \
+	-disallow-do \
+	-warnings-as-errors \
+	-collection:libs=./libs/"
 RELEASE_MODE=false
 BUILD_TARGET="$1"
 ERROR_OCCURRED=false

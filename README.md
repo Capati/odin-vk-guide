@@ -123,6 +123,13 @@ Everyone is welcome to contribute to the project. If you find any problems, you 
 using [GitHub's issue system](https://github.com/Capati/odin-vk-guide/issues). If you want to
 contribute code or the guide, you should fork the project and then send a pull request.
 
+### Compiler rules
+
+To ensure code consistency, please use the following compiler flags. You can test them with the
+provided build scripts:
+
+`-vet -debug -vet-cast -vet-style -vet-using-param -strict-style -disallow-do -warnings-as-errors`
+
 ## License
 
 MIT License, the same from [vkguide.dev][].

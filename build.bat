@@ -2,7 +2,16 @@
 setlocal enabledelayedexpansion
 
 :: Set default values
-set ARGS=-debug -collection:libs=./libs/
+set ARGS=^
+	-vet ^
+	-debug ^
+	-vet-cast ^
+	-vet-style ^
+	-vet-using-param ^
+	-strict-style ^
+	-disallow-do ^
+	-warnings-as-errors ^
+	-collection:libs=./libs/
 set RELEASE_MODE=false
 set BUILD_TARGET=%1
 set ERROR_OCCURRED=false
