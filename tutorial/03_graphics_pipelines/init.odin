@@ -82,7 +82,6 @@ engine_cleanup :: proc(self: ^Engine) {
 
 		// Destroy sync objects
 		vk.DestroyFence(self.vk_device, frame.render_fence, nil)
-		vk.DestroySemaphore(self.vk_device, frame.render_semaphore, nil)
 		vk.DestroySemaphore(self.vk_device, frame.swapchain_semaphore, nil)
 
 		// Flush and destroy the peer frame deletion queue
@@ -274,6 +273,16 @@ engine_create_swapchain :: proc(self: ^Engine, width, height: u32) -> (ok: bool)
 	self.swapchain_extent = swapchain.extent
 	self.swapchain_images = vkb.swapchain_get_images(self.vkb.swapchain) or_return
 	self.swapchain_image_views = vkb.swapchain_get_image_views(self.vkb.swapchain) or_return
+	self.swapchain_image_semaphores = make([]vk.Semaphore, len(self.swapchain_images))[:]
+	defer if !ok do delete(self.swapchain_image_semaphores)
+
+	// These need to be created here so that they are recreated when we resize.
+	semaphore_create_info := semaphore_create_info()
+	for &semaphore in self.swapchain_image_semaphores {
+		vk_check(
+			vk.CreateSemaphore(self.vk_device, &semaphore_create_info, nil, &semaphore),
+		) or_return
+	}
 
 	return true
 }
@@ -292,6 +301,12 @@ engine_resize_swapchain :: proc(self: ^Engine) -> (ok: bool) {
 engine_destroy_swapchain :: proc(self: ^Engine) {
 	vkb.destroy_swapchain(self.vkb.swapchain)
 	vkb.swapchain_destroy_image_views(self.vkb.swapchain, self.swapchain_image_views)
+
+	for semaphore in self.swapchain_image_semaphores {
+		vk.DestroySemaphore(self.vk_device, semaphore, nil)
+	}
+
+	delete(self.swapchain_image_semaphores)
 	delete(self.swapchain_image_views)
 	delete(self.swapchain_images)
 }
@@ -454,10 +469,9 @@ engine_init_commands :: proc(self: ^Engine) -> (ok: bool) {
 }
 
 engine_init_sync_structures :: proc(self: ^Engine) -> (ok: bool) {
-	// Create synchronization structures, one fence to control when the gpu has
-	// finished rendering the frame, and 2 semaphores to sincronize rendering with
-	// swapchain. We want the fence to start signalled so we can wait on it on the
-	// first frame
+	// Create synchronization structures, one fence to control when the gpu has finished
+	// rendering the frame, and a semaphore to synchronize rendering with swapchain. We want
+	// the fence to start signaled so we can wait on it on the first frame.
 	fence_create_info := fence_create_info({.SIGNALED})
 	semaphore_create_info := semaphore_create_info()
 
@@ -472,14 +486,6 @@ engine_init_sync_structures :: proc(self: ^Engine) -> (ok: bool) {
 				&semaphore_create_info,
 				nil,
 				&frame.swapchain_semaphore,
-			),
-		) or_return
-		vk_check(
-			vk.CreateSemaphore(
-				self.vk_device,
-				&semaphore_create_info,
-				nil,
-				&frame.render_semaphore,
 			),
 		) or_return
 	}

@@ -11,21 +11,19 @@ need into our Frame_Data structure. We add the new members into the struct.
 ```odin
 Frame_Data :: struct {
     swapchain_semaphore:   vk.Semaphore,
-    render_semaphore:      vk.Semaphore,
     render_fence:          vk.Fence,
     swapchain_image_index: u32,
 }
 ```
 
-We are going to need 2 semaphores and the main render fence. Let us begin creating them.
+We are going to need a semaphore and the main render fence. Let us begin creating them.
 
 The `swapchain_semaphore` is going to be used so that our render commands wait on the swapchain
-image request. The `render_semaphore` will be used to control presenting the image to the OS
-once the drawing finishes `render_fence` will lets us wait for the draw commands of a given
+image request. `render_fence` will lets us wait for the draw commands of a given
 frame to be finished.
 
 Lets initialize them. Check the procedures to make a VkFenceCreateInfo and a
-VkSemaphoreCreateInfo on our vk_initializers.cpp code.
+VkSemaphoreCreateInfo on our initializers.odin code.
 
 ```odin title="tutorial/01_initializing_vulkan/initializers.odin"
 fence_create_info :: proc(flags: vk.FenceCreateFlags = {}) -> vk.FenceCreateInfo {
@@ -73,14 +71,6 @@ engine_init_sync_structures :: proc(self: ^Engine) -> (ok: bool) {
                 &semaphore_create_info,
                 nil,
                 &frame.swapchain_semaphore,
-            ),
-        ) or_return
-        vk_check(
-            vk.CreateSemaphore(
-                self.vk_device,
-                &semaphore_create_info,
-                nil,
-                &frame.render_semaphore,
             ),
         ) or_return
     }
@@ -451,17 +441,19 @@ With the initializers made, we can write the submit itself.
 ```odin
 // Prepare the submission to the queue. we want to wait on the
 // `swapchain_semaphore`, as that semaphore is signaled when the swapchain is
-// ready we will signal the `render_semaphore`, to signal that rendering has
-// finished
+// ready. We will signal the `ready_for_present_semaphore`, to signal that
+// rendering has finished.
+
+ready_for_present_semaphore := self.swapchain_image_semaphores[frame.swapchain_image_index]
 
 cmd_info := command_buffer_submit_info(cmd)
-signal_info := semaphore_submit_info({.ALL_GRAPHICS}, frame.render_semaphore)
+signal_info := semaphore_submit_info({.ALL_GRAPHICS}, ready_for_present_semaphore)
 wait_info := semaphore_submit_info({.COLOR_ATTACHMENT_OUTPUT_KHR}, frame.swapchain_semaphore)
 
 submit := submit_info(&cmd_info, &signal_info, &wait_info)
 
-// Submit command buffer to the queue and execute it. _renderFence will now
-// block until the graphic commands finish execution
+// Submit command buffer to the queue and execute it. `render_fence` will now
+// block until the graphic commands finish execution.
 vk_check(vk.QueueSubmit2(self.graphics_queue, 1, &submit, frame.render_fence)) or_return
 ```
 
@@ -471,12 +463,12 @@ we are going to use the swapchain semaphore of the current frame. When we called
 `vk.AcquireNextImageKHR`, we set this same semaphore to be signaled, so with this, we make sure
 that the commands executed here wont begin until the swapchain image is ready.
 
-For signal info, we will be using the render_semaphore of the current frame, which will lets us
-syncronize with presenting the image on the screen.
+For signal info, we will be using the semaphore of the current swapchain image, which will lets us
+synchronize with presenting the image on the screen.
 
 And for the fence, we are going to use the current frame render_fence. At the start of the draw
-loop, we waited for that same fence to be ready. This is how we are going to syncronize our gpu
-to the cpu, as when the cpu goes ahead of the GPU, the fence will stop us so we dont use any of
+loop, we waited for that same fence to be ready. This is how we are going to synchronize our gpu
+to the cpu, as when the cpu goes ahead of the GPU, the fence will stop us so we don't use any of
 the other structures from this frame until the draw commands are executed.
 
 Last thing we need on the frame is to present the image we have just drawn into the screen
@@ -484,14 +476,14 @@ Last thing we need on the frame is to present the image we have just drawn into 
 ```odin
 // Prepare present
 //
-// this will put the image we just rendered to into the visible window. we
-// want to wait on the `render_semaphore` for that, as its necessary that
-// drawing commands have finished before the image is displayed to the user
+// This will put the image we just rendered to into the visible window. we want to wait on
+// the `ready_for_present_semaphore` for that, as its necessary that drawing commands
+// have finished before the image is displayed to the user.
 present_info := vk.PresentInfoKHR {
     sType              = .PRESENT_INFO_KHR,
     pSwapchains        = &self.vk_swapchain,
     swapchainCount     = 1,
-    pWaitSemaphores    = &frame.render_semaphore,
+    pWaitSemaphores    = &ready_for_present_semaphore,
     waitSemaphoreCount = 1,
     pImageIndices      = &frame.swapchain_image_index,
 }
@@ -504,7 +496,7 @@ self.frame_number += 1
 
 `vk.QueuePresent` has a very similar info struct as the queue submit. It also has the pointers
 for the semaphores, but it has image index and swapchain index. We will wait on the
-render_semaphore, and connect it to our swapchain. This way, we wont be presenting the image to
+ready_for_present_semaphore, and connect it to our swapchain. This way, we wont be presenting the image to
 the screen until it has finished the rendering commands from the submit right before it.
 
 At the end of the procedure, we increment frame counter.
@@ -518,7 +510,6 @@ for &frame in self.frames {
 
     // Destroy sync objects
     vk.DestroyFence(self.vk_device, frame.render_fence, nil)
-    vk.DestroySemaphore(self.vk_device, frame.render_semaphore, nil)
     vk.DestroySemaphore(self.vk_device, frame.swapchain_semaphore, nil)
 }
 ```
@@ -529,7 +520,7 @@ a flashing blue screen.
 ![Flashing blue screen](./img/section-1.jpg)
 
 If you encounter unexpected results, check the validation layers, as they will catch possible
-syncronization problems.
+synchronization problems.
 
 :::warning[]
 
