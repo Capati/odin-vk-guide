@@ -347,7 +347,7 @@ engine_create_swapchain :: proc(self: ^Engine, width, height: u32) -> (ok: bool)
 	self.swapchain_images = vkb.swapchain_get_images(self.vkb.swapchain) or_return
 	self.swapchain_image_views = vkb.swapchain_get_image_views(self.vkb.swapchain) or_return
 	self.swapchain_image_semaphores = make([]vk.Semaphore, len(self.swapchain_images))[:]
-	defer if !ok do delete(self.swapchain_image_semaphores)
+	defer if !ok {delete(self.swapchain_image_semaphores)}
 
 	// These need to be created here so that they are recreated when we resize.
 	semaphore_create_info := semaphore_create_info()
