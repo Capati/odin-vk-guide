@@ -469,8 +469,8 @@ engine_draw :: proc(self: ^Engine) -> (ok: bool) {
 	// semaphore is signaled when the swapchain is ready. We will signal the
 	// `ready_for_present_semaphore` to signal that rendering has finished.
 
-	frame := engine_get_current_frame(self)
-	ready_for_present_semaphore := self.swapchain_image_semaphores[frame.swapchain_image_index]
+	// frame := engine_get_current_frame(self)
+	ready_for_present_semaphore := self.swapchain_image_semaphores[swapchain_image_index]
 
 	cmd_info := command_buffer_submit_info(cmd)
 	signal_info := semaphore_submit_info({.ALL_GRAPHICS}, ready_for_present_semaphore)
