@@ -363,6 +363,12 @@ engine_create_swapchain :: proc(self: ^Engine, width, height: u32) -> (ok: bool)
 engine_destroy_swapchain :: proc(self: ^Engine) {
 	vkb.destroy_swapchain(self.vkb.swapchain)
 	vkb.swapchain_destroy_image_views(self.vkb.swapchain, self.swapchain_image_views)
+
+	for semaphore in self.swapchain_image_semaphores {
+		vk.DestroySemaphore(self.vk_device, semaphore, nil)
+	}
+
+	delete(self.swapchain_image_semaphores)
 	delete(self.swapchain_image_views)
 	delete(self.swapchain_images)
 }
@@ -964,7 +970,7 @@ engine_draw :: proc(self: ^Engine) -> (ok: bool) {
 		swapchainCount     = 1,
 		pWaitSemaphores    = &ready_for_present_semaphore,
 		waitSemaphoreCount = 1,
-		pImageIndices      = &swapchain_image_index,
+		pImageIndices      = &frame.swapchain_image_index,
 	}
 
 	vk_check(vk.QueuePresentKHR(self.graphics_queue, &present_info)) or_return
