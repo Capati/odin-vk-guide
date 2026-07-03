@@ -11,6 +11,7 @@ insert_final_newline = true
 
 [*.json]
 insert_final_newline = ignore
+indent_style = space
 
 [*.md]
 trim_trailing_whitespace = false
