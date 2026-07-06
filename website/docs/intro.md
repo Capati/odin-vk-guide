@@ -55,7 +55,7 @@ The guide is separated into multiple sections for code organization.
 - **[Chapter 4](/category/4-textures-and-engine-architecture)** - Textures and better
   descriptor set management
 - **[Chapter 5](/category/5-scene-graph)** - Component-based Scene Graph approach
-- **[Chapter 6](/category/glfw-loading)** - Full GLTF scene loading and high performance rendering
+- **[Chapter 6](/category/6-gltf-loading)** - Full GLTF scene loading and high performance rendering
 
 [Issues]: https://github.com/Capati/odin-vk-guide/issues
 [Discussions]: https://github.com/Capati/odin-vk-guide/discussions
