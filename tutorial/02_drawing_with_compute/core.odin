@@ -9,20 +9,20 @@ import "core:log"
 import vk "vendor:vulkan"
 
 // Local packages
-import vma "libs:vma"
+import "libs:vma"
 
 @(require_results)
 vk_check :: #force_inline proc(
-	res: vk.Result,
-	message := "Detected Vulkan error",
-	loc := #caller_location,
+    res: vk.Result,
+    message := "Detected Vulkan error",
+    loc := #caller_location,
 ) -> bool {
-	if intr.expect(res, vk.Result.SUCCESS) == .SUCCESS {
-		return true
-	}
-	log.errorf("[Vulkan Error] %s: %v", message, res)
-	runtime.print_caller_location(loc)
-	return false
+    if intr.expect(res, vk.Result.SUCCESS) == .SUCCESS {
+        return true
+    }
+    log.errorf("[Vulkan Error] %s: %v", message, res)
+    runtime.print_caller_location(loc)
+    return false
 }
 
 Allocated_Image :: struct {
@@ -37,5 +37,5 @@ Allocated_Image :: struct {
 
 destroy_image :: proc(self: Allocated_Image) {
     vk.DestroyImageView(self.device, self.image_view, nil)
-    vma.destroy_image(self.allocator, self.image, self.allocation)
+    vma.DestroyImage(self.allocator, self.image, self.allocation)
 }

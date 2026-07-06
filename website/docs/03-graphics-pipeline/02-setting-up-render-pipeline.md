@@ -1,9 +1,9 @@
 ---
 sidebar_position: 2
-sidebar_label: "Setting up render pipeline"
+sidebar_label: "Setting Up Render Pipeline"
 ---
 
-# Setting up render pipeline
+# Setting Up Render Pipeline
 
 ## `vk.GraphicsPipelineCreateInfo`
 
@@ -116,16 +116,11 @@ will use.
 Lets begin writing the builder. All pipeline code will be on `pipelines.odin`. You can find
 it on the shared folder if you are checking the chapter code.
 
-```odin
-// Core
-import sa "core:container/small_array"
-
+```odin title="pipelines.odin"
 MAX_SHADER_STAGES :: #config(MAX_SHADER_STAGES, 8)
 
-Shader_Stages :: sa.Small_Array(MAX_SHADER_STAGES, vk.PipelineShaderStageCreateInfo)
-
 Pipeline_Builder :: struct {
-    shader_stages:           Shader_Stages,
+    shader_stages:           [dynamic; MAX_SHADER_STAGES]vk.PipelineShaderStageCreateInfo,
     input_assembly:          vk.PipelineInputAssemblyStateCreateInfo,
     rasterizer:              vk.PipelineRasterizationStateCreateInfo,
     color_blend_attachment:  vk.PipelineColorBlendAttachmentState,
@@ -150,7 +145,7 @@ just returns a builder with the same defaults.
 
 Lets write that `pipeline_builder_clear()` procedure first.
 
-```odin
+```odin title="pipelines.odin"
 pipeline_builder_clear :: proc(self: ^Pipeline_Builder) {
     assert(self != nil)
 
@@ -178,7 +173,7 @@ pipeline_builder_clear :: proc(self: ^Pipeline_Builder) {
         sType = .PIPELINE_TESSELLATION_STATE_CREATE_INFO,
     }
 
-    sa.clear(&self.shader_stages)
+    clear(&self.shader_stages)
     self.pipeline_layout = {}
     self.base_pipeline = {}
     self.base_pipeline_index = -1
@@ -196,14 +191,15 @@ We will set the `sType` of every structure here, and leave everything else as 0.
 Lets begin writing the `pipeline_builder_build` procedure. first we will begin by setting some
 of the Info structures we are missing because they wont be configured.
 
-```odin
+```odin title="pipelines.odin"
+@(require_results)
 pipeline_builder_build :: proc(
     self: ^Pipeline_Builder,
     device: vk.Device,
 ) -> (
     pipeline: vk.Pipeline,
     ok: bool,
-) #optional_ok {
+) {
     // Make viewport state from our stored viewport and scissor.
     // At the moment we wont support multiple viewports or scissors
     viewport_state := vk.PipelineViewportStateCreateInfo {
@@ -232,7 +228,7 @@ pipeline_builder_build :: proc(
         sType             = .PIPELINE_DYNAMIC_STATE_CREATE_INFO,
         pDynamicStates    = raw_data(dynamic_states[:]),
         dynamicStateCount = u32(len(dynamic_states)),
-      }
+    }
 
     return pipeline, true
 }
@@ -254,46 +250,64 @@ To connect all of the configuration structures we have on the builder, lets begi
 `vk.GraphicsPipelineCreateInfo` and add `render_info` into the `pNext` of the graphics pipeline
 info itself.
 
-```odin
-// Build the actual pipeline.
-// We now use all of the info structs we have been writing into into this one
-// to create the pipeline.
-pipeline_info := vk.GraphicsPipelineCreateInfo {
-    sType               = .GRAPHICS_PIPELINE_CREATE_INFO,
-    // Connect the renderInfo to the pNext extension mechanism
-    pNext               = &self.render_info,
-    flags               = self.flags,
-    stageCount          = u32(sa.len(self.shader_stages)),
-    pStages             = raw_data(sa.slice(&self.shader_stages)),
-    pVertexInputState   = &vertex_input_info,
-    pInputAssemblyState = &self.input_assembly,
-    pTessellationState  = &self.tessellation_state,
-    pViewportState      = &viewport_state,
-    pRasterizationState = &self.rasterizer,
-    pMultisampleState   = &self.multisampling,
-    pDepthStencilState  = &self.depth_stencil,
-    pColorBlendState    = &color_blending,
-    pDynamicState       = &dynamic_info,
-    layout              = self.pipeline_layout,
-    basePipelineHandle  = self.base_pipeline,
-    basePipelineIndex   = self.base_pipeline_index,
+```odin title="pipelines.odin"
+@(require_results)
+pipeline_builder_build :: proc(
+    self: ^Pipeline_Builder,
+    device: vk.Device,
+) -> (
+    pipeline: vk.Pipeline,
+    ok: bool,
+) {
+    // ...
+
+    // Build the actual pipeline.
+    // We now use all of the info structs we have been writing into into this one
+    // to create the pipeline.
+    pipeline_info := vk.GraphicsPipelineCreateInfo {
+        sType               = .GRAPHICS_PIPELINE_CREATE_INFO,
+        // Connect the renderInfo to the pNext extension mechanism
+        pNext               = &self.render_info,
+        flags               = self.flags,
+        stageCount          = u32(len(self.shader_stages)),
+        pStages             = raw_data(&self.shader_stages),
+        pVertexInputState   = &vertex_input_info,
+        pInputAssemblyState = &self.input_assembly,
+        pTessellationState  = &self.tessellation_state,
+        pViewportState      = &viewport_state,
+        pRasterizationState = &self.rasterizer,
+        pMultisampleState   = &self.multisampling,
+        pDepthStencilState  = &self.depth_stencil,
+        pColorBlendState    = &color_blending,
+        pDynamicState       = &dynamic_info,
+        layout              = self.pipeline_layout,
+        basePipelineHandle  = self.base_pipeline,
+        basePipelineIndex   = self.base_pipeline_index,
+    }
+
+    return pipeline, true
 }
 ```
 
 This is all we needed for the pipeline, so we can finally call the create procedure.
 
-```odin
-vk_check(
-    vk.CreateGraphicsPipelines(device, 0, 1, &pipeline_info, nil, &pipeline),
-    "Failed to create pipeline",
-) or_return
+```odin title="pipelines.odin"
+    // ...
+
+    vk_check(vk.CreateGraphicsPipelines(
+        device, 0, 1, &pipeline_info, nil, &pipeline),
+        "Failed to create pipeline",
+    ) or_return
+
+    return pipeline, true
+}
 ```
 
 And thats it with the main creation procedure. We now need to actually set the options
 properly, as right now the entire pipeline is essentially null, which will error as-is due to
 missing options.
 
-```odin
+```odin title="pipelines.odin"
 pipeline_builder_add_shader :: proc(
     self: ^Pipeline_Builder,
     shader: vk.ShaderModule,
@@ -301,7 +315,7 @@ pipeline_builder_add_shader :: proc(
     entry_point: cstring = "main",
 ) {
     create_info := pipeline_shader_stage_create_info(stage, shader, entry_point)
-    sa.push(&self.shader_stages, create_info)
+    append(&self.shader_stages, create_info)
 }
 
 pipeline_builder_set_shaders :: proc(
@@ -319,7 +333,7 @@ compute pipeline.
 
 Next we add a procedure to set input topology.
 
-```odin
+```odin title="pipelines.odin"
 pipeline_builder_set_input_topology :: proc(
     self: ^Pipeline_Builder,
     topology: vk.PrimitiveTopology,
@@ -336,7 +350,7 @@ PrimitiveRestart is used for triangle strips and line strips, but we dont use it
 
 The rasterizer state is a big one so we will split it on a few options.
 
-```odin
+```odin title="pipelines.odin"
 pipeline_builder_set_polygon_mode :: proc(
     self: ^Pipeline_Builder,
     polygon_mode: vk.PolygonMode,
@@ -350,7 +364,7 @@ pipeline_builder_set_polygon_mode :: proc(
 We need to have lineWidth as 1.f as default, then we set the polygon mode, which controls
 wireframe vs solid rendering and point rendering.
 
-```odin
+```odin title="pipelines.odin"
 pipeline_builder_set_cull_mode :: proc(
     self: ^Pipeline_Builder,
     cull_mode: vk.CullModeFlags,
@@ -366,7 +380,7 @@ Cull mode will set the front face and the cull mode for backface culling.
 Next is setting the multisample state. We will default the structure to multisampling disabled.
 Later we can add other procedures for enabling different multisampling levels for antialiasing
 
-```odin
+```odin title="pipelines.odin"
 pipeline_builder_set_multisampling :: proc(
     self: ^Pipeline_Builder,
     rasterization_samples: vk.SampleCountFlags,
@@ -390,7 +404,7 @@ pipeline_builder_set_multisampling_none :: proc(self: ^Pipeline_Builder) {
 
 Next we will add a procedure for blending mode.
 
-```odin
+```odin title="pipelines.odin"
 pipeline_builder_set_blend_state :: proc(
     self: ^Pipeline_Builder,
     blend_enable: bool,
@@ -429,15 +443,21 @@ attachment correctly.
 
 Now we hook our formats, lets add the procedures for both depth testing and color attachment.
 
-```odin
-pipeline_builder_set_color_attachment_format :: proc(self: ^Pipeline_Builder, format: vk.Format) {
+```odin title="pipelines.odin"
+pipeline_builder_set_color_attachment_format :: proc(
+    self: ^Pipeline_Builder,
+    format: vk.Format,
+) {
     self.color_attachment_format = format
     // Connect the format to the `render_info`  structure
     self.render_info.colorAttachmentCount = 1
     self.render_info.pColorAttachmentFormats = &self.color_attachment_format
 }
 
-pipeline_builder_set_depth_attachment_format :: proc(self: ^Pipeline_Builder, format: vk.Format) {
+pipeline_builder_set_depth_attachment_format :: proc(
+    self: ^Pipeline_Builder, 
+    format: vk.Format,
+) {
     self.render_info.depthAttachmentFormat = format
 }
 ```
@@ -448,7 +468,7 @@ images at once, but we dont need this yet so we can default it to just 1 color f
 
 The last one we need is a procedure to disable the depth testing logic.
 
-```odin
+```odin title="pipelines.odin"
 pipeline_builder_disable_depth_test :: proc(self: ^Pipeline_Builder) {
     self.depth_stencil.depthTestEnable = false
     self.depth_stencil.depthWriteEnable = false
@@ -548,10 +568,20 @@ Lets now create the pipeline and layout we need to draw this triangle.
 On `Engine` structure, we add a couple of fields to hold the pipeline and its layout. We also
 add a `engine_init_triangle_pipeline()` procedure.
 
-```odin
+```odin title="engine.odin"
 Engine :: struct {
-    triangle_pipeline_layout: vk.PipelineLayout,
-    triangle_pipeline:        vk.Pipeline,
+    // ...
+
+    // Rendering resources
+    draw_image:                   Allocated_Image,
+    draw_extent:                  vk.Extent2D,
+    gradient_pipeline_layout:     vk.PipelineLayout,
+    background_effects:           [Compute_Effect_Kind]Compute_Effect,
+    current_background_effect:    Compute_Effect_Kind,
+    // diff-add-start
+    triangle_pipeline_layout:     vk.PipelineLayout,
+    triangle_pipeline:            vk.Pipeline,
+    // diff-add-end
 }
 
 engine_init_triangle_pipeline :: proc(self: ^Engine) -> (ok: bool) {
@@ -561,35 +591,43 @@ engine_init_triangle_pipeline :: proc(self: ^Engine) -> (ok: bool) {
 
 We will call this `engine_init_triangle_pipeline()` from `engine_init_pipelines()` procedure.
 
+```odin title="engine.odin - engine_init_pipelines"
+    // ...
+
+    vk_check(vk.CreatePipelineLayout(
+        self.vk_device, &compute_layout, nil, &self.gradient_pipeline_layout)) or_return
+
+    engine_init_background_pipelines(self) or_return
+    // diff-add
+    engine_init_triangle_pipeline(self) or_return
+
+    return true
+}
+```
+
 Lets write that procedure We will start by loading the 2 shaders into `vk.ShaderModules`, like
 we did with the compute shader, but this time more shaders.
 
-```odin
+```odin title="engine.odin"
 engine_init_triangle_pipeline :: proc(self: ^Engine) -> (ok: bool) {
-    triangle_frag_shader := create_shader_module(
-        self.vk_device,
-        #load("./../../shaders/compiled/colored_triangle.frag.spv"),
-    ) or_return
+    triangle_frag_shader := create_shader_module(self.vk_device,
+        #load("./../shaders/compiled/colored_triangle.frag.spv")) or_return
     defer vk.DestroyShaderModule(self.vk_device, triangle_frag_shader, nil)
 
-    triangle_vert_shader := create_shader_module(
-        self.vk_device,
-        #load("./../../shaders/compiled/colored_triangle.vert.spv"),
-    ) or_return
+    triangle_vert_shader := create_shader_module(self.vk_device,
+        #load("./../shaders/compiled/colored_triangle.vert.spv")) or_return
     defer vk.DestroyShaderModule(self.vk_device, triangle_vert_shader, nil)
 
-    // Build the pipeline layout that controls the inputs/outputs of the shader, we are not
-    // using descriptor sets or other systems yet, so no need to use anything other than empty
-    // default
+    // Build the pipeline layout that controls the inputs/outputs of the shader,
+    // we are not using descriptor sets or other systems yet, so no need to use
+    // anything other than empty default
     pipeline_layout_info := pipeline_layout_create_info()
-    vk_check(
-        vk.CreatePipelineLayout(
-            self.vk_device,
-            &pipeline_layout_info,
-            nil,
-            &self.triangle_pipeline_layout,
-        ),
-    ) or_return
+    vk_check(vk.CreatePipelineLayout(
+        self.vk_device,
+        &pipeline_layout_info,
+        nil,
+        &self.triangle_pipeline_layout,
+    )) or_return
     deletion_queue_push(&self.main_deletion_queue, self.triangle_pipeline_layout)
 
     return true
@@ -648,7 +686,7 @@ hold these graphics commands.
 
 Lets update the draw loop first.
 
-```odin
+```odin title="engine.odin - engine_draw"
 // Start the command buffer recording
 vk_check(vk.BeginCommandBuffer(cmd, &cmd_begin_info)) or_return
 
@@ -658,25 +696,28 @@ transition_image(cmd, self.draw_image.image, .UNDEFINED, .GENERAL)
 
 // Clear the image
 engine_draw_background(self, cmd) or_return
-
 transition_image(cmd, self.draw_image.image, .GENERAL, .COLOR_ATTACHMENT_OPTIMAL)
 
-// Draw the triangle
+// Draw geometry
 engine_draw_geometry(self, cmd) or_return
 
 // Transition the draw image and the swapchain image into their correct transfer layouts
-transition_image(cmd, self.draw_image.image, .COLOR_ATTACHMENT_OPTIMAL, .TRANSFER_SRC_OPTIMAL)
 transition_image(
     cmd,
-    self.swapchain_images[frame.swapchain_image_index],
+    self.draw_image.image,
+    .COLOR_ATTACHMENT_OPTIMAL,
+    .TRANSFER_SRC_OPTIMAL)
+transition_image(
+    cmd,
+    self.swapchain_images[swapchain_image_index],
     .UNDEFINED,
     .TRANSFER_DST_OPTIMAL,
 )
 ```
 
-Now fill the draw_geometry procedure
+Now fill the `draw_geometry` procedure
 
-```odin
+```odin title="engine.odin"
 engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool) {
     // Begin a render pass connected to our draw image
     color_attachment := attachment_info(self.draw_image.image_view, nil, .COLOR_ATTACHMENT_OPTIMAL)

@@ -9,10 +9,11 @@ sidebar_label: "Home"
 ![scene](./img/fullscene.png)
 End stage after the tutorial
 
-:::info[Odin Guide]
+:::info[Odin VK Guide]
 
-This page presents an [Odin](https://odin-lang.org/) adaptation of the
-[vkguide.dev](https://vkguide.dev/) tutorial. Full credit goes to the original authors.
+This page presents an adaptation of the [Odin programming language](https://odin-lang.org/?utm_source=chatgpt.com) version of the [vkguide.dev tutorial](https://vkguide.dev/?utm_source=chatgpt.com). Full credit goes to the original authors.
+
+This is not a direct copy of the original tutorial. It includes many editing changes, bug fixes, clarifications, and additional sections.
 
 :::
 
@@ -53,7 +54,8 @@ The guide is separated into multiple sections for code organization.
   the graphics pipeline)
 - **[Chapter 4](/category/4-textures-and-engine-architecture)** - Textures and better
   descriptor set management
-- **Chapter 5** - Full GLTF scene loading and high performance rendering
+- **[Chapter 5](/category/5-scene-graph)** - Component-based Scene Graph approach
+- **[Chapter 6](/category/glfw-loading)** - Full GLTF scene loading and high performance rendering
 
 [Issues]: https://github.com/Capati/odin-vk-guide/issues
 [Discussions]: https://github.com/Capati/odin-vk-guide/discussions

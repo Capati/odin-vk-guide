@@ -24,8 +24,8 @@ The files are all stored in the `tutorial/<chapter-name>` folder.
 `engine.odin` will be our main file, and the core of the project. `loader.odin` will be tied
 into it as it will need to interface it while loading GLTF files.
 
-The other files are for generic vulkan abstraction layers that will get built as the tutorial
-needs. Those abstraction files have no dependencies other than vulkan, so you can keep them for
+The other files are for generic Vulkan abstraction layers that will get built as the tutorial
+needs. Those abstraction files have no dependencies other than Vulkan, so you can keep them for
 your own projects.
 
 ## Code

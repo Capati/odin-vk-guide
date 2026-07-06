@@ -1,0 +1,8 @@
+{
+	"label": "6. GLTF Loading",
+	"position": 9,
+	"link": {
+		"type": "generated-index",
+		"description": "With the basics of the engine done, this chapter focuses on loading GLTF files and setting up more advanced rendering features."
+	}
+}

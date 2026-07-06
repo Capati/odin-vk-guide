@@ -19,11 +19,13 @@ For the Vulkan engine, we use specific folders and filenames:
 │   └───source
 ├───src
 └───tutorial
+    ├───00_project_setup
     ├───01_initializing_vulkan
     ├───02_drawing_with_compute
     ├───03_graphics_pipelines
     ├───04_textures_and_engine_architecture
-    └───05_gltf_loading
+    ├───05_scene_graph
+    └───06_gltf_loading
 ````
 
 - `build` is where the executables will get built

@@ -32,17 +32,19 @@ values can be too much or not enough, but we can adjust them as needed.
 
 :::
 
-This is the implementation we will have in the `descriptors.odin`.
+This is the implementation we will have in the `descriptors2.odin` (new file).
 
-```odin title="descriptor.odin"
-// Core
-import sa "core:container/small_array"
+```odin title="descriptor2.odin"
+package vk_guide
 
-MAX_POOLS :: #config(MAX_POOLS, 32)
+// Vendor
+import vk "vendor:vulkan"
 
-Ratios :: sa.Small_Array(MAX_POOL_SIZES, Pool_Size_Ratio)
-Full_Pools :: sa.Small_Array(MAX_POOLS, vk.DescriptorPool)
-Ready_Pools :: sa.Small_Array(MAX_POOLS, vk.DescriptorPool)
+MAX_POOLS   :: #config(MAX_POOLS, 32)
+
+Ratios      :: [dynamic; MAX_POOL_SIZES]Pool_Size_Ratio
+Full_Pools  :: [dynamic; MAX_POOLS]vk.DescriptorPool
+Ready_Pools :: [dynamic; MAX_POOLS]vk.DescriptorPool
 
 Descriptor_Allocator_Growable :: struct {
     device:        vk.Device,
@@ -64,6 +66,7 @@ descriptor_growable_init :: proc(
 }
 
 descriptor_growable_clear_pools :: proc(self: ^Descriptor_Allocator_Growable) -> (ok: bool) {
+    return true
 }
 
 descriptor_growable_destroy_pools :: proc(self: Descriptor_Allocator_Growable) {
@@ -98,6 +101,7 @@ descriptor_growable_create_pool :: proc(
 ) {
     return
 }
+
 ```
 
 This is very similar as in the other descriptor allocator. What has changed is that
@@ -113,16 +117,16 @@ procedure will pick up a pool from `ready_pools`, or create a new one.
 
 Lets write the get_pool and create_pool procedures.
 
-```odin
+```odin title="descriptor2.odin"
 descriptor_growable_get_pool :: proc(
     self: ^Descriptor_Allocator_Growable,
 ) -> (
     pool: vk.DescriptorPool,
     ok: bool,
 ) {
-    if sa.len(self.ready_pools) > 0 {
+    if len(self.ready_pools) > 0 {
         // Pop from ready pools
-        pool = sa.pop_back(&self.ready_pools)
+        pool = pop(&self.ready_pools)
     } else {
         // Need to create a new pool
         pool = descriptor_growable_create_pool(self, self.sets_per_pool) or_return
@@ -147,8 +151,8 @@ descriptor_growable_create_pool :: proc(
 ) {
     pool_sizes: [MAX_POOL_SIZES]vk.DescriptorPoolSize
 
-    for i in 0 ..< sa.len(self.ratios) {
-        ratio := sa.get_ptr(&self.ratios, i)
+    for i in 0 ..< len(self.ratios) {
+        ratio := &self.ratios[i]
         pool_sizes[i] = vk.DescriptorPoolSize {
             type            = ratio.type,
             descriptorCount = u32(ratio.ratio) * set_count,
@@ -158,7 +162,7 @@ descriptor_growable_create_pool :: proc(
     pool_info := vk.DescriptorPoolCreateInfo {
         sType         = .DESCRIPTOR_POOL_CREATE_INFO,
         maxSets       = set_count,
-        poolSizeCount = u32(sa.len(self.ratios)),
+        poolSizeCount = u32(len(self.ratios)),
         pPoolSizes    = &pool_sizes[0],
     }
 
@@ -169,8 +173,9 @@ descriptor_growable_create_pool :: proc(
 ```
 
 On `get_pool`, when we create a new pool, we increase the `sets_per_pool`, to mimic something
-like an array resize. Still, we will limit the max amount of sets per pool to `4092` to avoid it
-growing too much. This max limit can be modified if you find it works better in your use cases.
+like an array resize. Still, we will limit the max amount of sets per pool to `4092` to avoid
+it growing too much. This max limit can be modified if you find it works better in your use
+cases.
 
 An important detail on this procedure is that we are removing the pool from the `ready_pools`
 array when grabbing it. This is so then we can add it back into that array or the other one
@@ -180,7 +185,7 @@ On the `create_pool` procedure, its the same we had in the other descriptor allo
 
 Lets create the other procedures we need, `init()`, `clear_pools()`, and `destroy_pools()`.
 
-```odin
+```odin title="descriptor2.odin"
 descriptor_growable_init :: proc(
     self: ^Descriptor_Allocator_Growable,
     device: vk.Device,
@@ -191,12 +196,12 @@ descriptor_growable_init :: proc(
 ) {
     self.device = device
 
-    sa.clear(&self.ratios)
-    sa.clear(&self.full_pools)
-    sa.clear(&self.ready_pools)
+    clear(&self.ratios)
+    clear(&self.full_pools)
+    clear(&self.ready_pools)
 
     for r in pool_ratios {
-        sa.push_back(&self.ratios, r)
+        append(&self.ratios, r)
     }
 
     new_pool := descriptor_growable_create_pool(self, max_sets) or_return
@@ -204,38 +209,36 @@ descriptor_growable_init :: proc(
     // Grow it next allocation
     self.sets_per_pool = u32(f32(max_sets) * 1.5)
 
-    sa.push_back(&self.ready_pools, new_pool)
+    append(&self.ready_pools, new_pool)
 
     return true
 }
 
 descriptor_growable_clear_pools :: proc(self: ^Descriptor_Allocator_Growable) -> (ok: bool) {
     // Reset ready pools
-    for &pool in sa.slice(&self.ready_pools) {
+    for &pool in self.ready_pools {
         vk_check(vk.ResetDescriptorPool(self.device, pool, {})) or_return
     }
 
     // Reset full pools and move them to ready
-    for &pool in sa.slice(&self.full_pools) {
+    for &pool in self.full_pools {
         vk_check(vk.ResetDescriptorPool(self.device, pool, {})) or_return
-        sa.push_back(&self.ready_pools, pool)
+        append(&self.ready_pools, pool)
     }
 
-    sa.clear(&self.full_pools)
+    clear(&self.full_pools)
 
     return true
 }
 
 descriptor_growable_destroy_pools :: proc(self: Descriptor_Allocator_Growable) {
     // Destroy ready pools
-    for i in 0 ..< sa.len(self.ready_pools) {
-        pool := sa.get(self.ready_pools, i)
+    for pool in self.ready_pools {
         vk.DestroyDescriptorPool(self.device, pool, nil)
     }
 
     // Destroy full pools
-    for i in 0 ..< sa.len(self.full_pools) {
-        pool := sa.get(self.full_pools, i)
+    for pool in self.full_pools {
         vk.DestroyDescriptorPool(self.device, pool, nil)
     }
 }
@@ -251,7 +254,7 @@ Destroying loops over both lists and destroys everything to clear the entire all
 
 Last is the new `allocate` procedure.
 
-```odin
+```odin title="descriptor2.odin"
 descriptor_growable_allocate :: proc(
     self: ^Descriptor_Allocator_Growable,
     layout: ^vk.DescriptorSetLayout,
@@ -275,14 +278,14 @@ descriptor_growable_allocate :: proc(
 
     // Allocation failed. Try again
     if result == .ERROR_OUT_OF_POOL_MEMORY || result == .ERROR_FRAGMENTED_POOL {
-        sa.push_back(&self.full_pools, pool_to_use)
+        append(&self.full_pools, pool_to_use)
 
         pool_to_use = descriptor_growable_get_pool(self) or_return
         alloc_info.descriptorPool = pool_to_use
         vk_check(vk.AllocateDescriptorSets(self.device, &alloc_info, &ds)) or_return
     }
 
-    sa.push_back(&self.ready_pools, pool_to_use)
+    append(&self.ready_pools, pool_to_use)
 
     return ds, true
 }
@@ -301,14 +304,14 @@ going to abstract that too. In our writer, we are going to have a `write_image` 
 `write_buffer` procedures to bind the data. Lets look at the struct declaration, also on the
 `descriptors.odin` file.
 
-```odin
-MAX_IMAGE_INFOS :: #config(MAX_IMAGE_INFOS, 64)
+```odin title="descriptor2.odin"
+MAX_IMAGE_INFOS  :: #config(MAX_IMAGE_INFOS, 64)
 MAX_BUFFER_INFOS :: #config(MAX_BUFFER_INFOS, 64)
-MAX_WRITES :: #config(MAX_WRITES, 128)
+MAX_WRITES       :: #config(MAX_WRITES, 128)
 
-Image_Infos :: sa.Small_Array(MAX_IMAGE_INFOS, vk.DescriptorImageInfo)
-Buffer_Infos :: sa.Small_Array(MAX_BUFFER_INFOS, vk.DescriptorBufferInfo)
-Writes :: sa.Small_Array(MAX_WRITES, vk.WriteDescriptorSet)
+Image_Infos      :: [dynamic; MAX_IMAGE_INFOS]vk.DescriptorImageInfo
+Buffer_Infos     :: [dynamic; MAX_BUFFER_INFOS]vk.DescriptorBufferInfo
+Writes           :: [dynamic; MAX_WRITES]vk.WriteDescriptorSet
 
 Descriptor_Writer :: struct {
     device:       vk.Device,
@@ -330,7 +333,7 @@ descriptor_writer_write_image :: proc(
     type: vk.DescriptorType,
     loc := #caller_location,
 ) -> bool {
-    return
+    return true
 }
 
 descriptor_writer_write_buffer :: proc(
@@ -342,7 +345,7 @@ descriptor_writer_write_buffer :: proc(
     type: vk.DescriptorType,
     loc := #caller_location,
 ) -> bool {
-    return
+    return true
 }
 
 descriptor_writer_clear :: proc(self: ^Descriptor_Writer) {
@@ -380,7 +383,7 @@ pointers are stable, or a way to fix up those pointers when making the final
 
 Lets look at what the `write_buffer` procedure does.
 
-```odin
+```odin title="descriptor2.odin"
 descriptor_writer_write_buffer :: proc(
     self: ^Descriptor_Writer,
     binding: int,
@@ -390,36 +393,31 @@ descriptor_writer_write_buffer :: proc(
     type: vk.DescriptorType,
     loc := #caller_location,
 ) -> bool {
-    assert(sa.space(self.buffer_infos) != 0, "No space left in buffer_infos array", loc)
-    assert(sa.space(self.writes) != 0, "No space left in writes array", loc)
+    assert(cap(self.buffer_infos) != 0, "No space left in buffer_infos array", loc)
+    assert(cap(self.writes) != 0, "No space left in writes array", loc)
 
     // Add buffer info
-    sa.push_back(
-        &self.buffer_infos,
-        vk.DescriptorBufferInfo{buffer = buffer, offset = offset, range = size},
-    )
+    append(&self.buffer_infos,
+        vk.DescriptorBufferInfo{buffer = buffer, offset = offset, range = size})
 
-    info_ptr := sa.get_ptr(&self.buffer_infos, sa.len(self.buffer_infos) - 1)
+    info_ptr := &self.buffer_infos[len(self.buffer_infos) - 1]
 
     // Add write
-    sa.push_back(
-        &self.writes,
-        vk.WriteDescriptorSet {
-            sType           = .WRITE_DESCRIPTOR_SET,
-            dstBinding      = u32(binding),
-            dstSet          = 0, // Left empty for now until we need to write it
-            descriptorCount = 1,
-            descriptorType  = type,
-            pBufferInfo     = info_ptr,
-        },
-    )
+    append(&self.writes, vk.WriteDescriptorSet {
+        sType           = .WRITE_DESCRIPTOR_SET,
+        dstBinding      = u32(binding),
+        dstSet          = 0, // Left empty for now until we need to write it
+        descriptorCount = 1,
+        descriptorType  = type,
+        pBufferInfo     = info_ptr,
+    })
 
     return true
 }
 ```
 
-We have to fill a `vk.DescriptorBufferInfo` first, with the buffer itself, and then an offset and
-range (size) for it.
+We have to fill a `vk.DescriptorBufferInfo` first, with the buffer itself, and then an offset
+and range (size) for it.
 
 Then, we have to setup the write itself. Its only 1 descriptor, at the given binding slot, with
 the correct type, and a pointer to the `vk.DescriptorBufferInfo`.
@@ -440,7 +438,7 @@ usage when allocating the `vk.Buffer`.
 
 For images, this is the other procedure.
 
-```odin
+```odin title="descriptor2.odin"
 descriptor_writer_write_image :: proc(
     self: ^Descriptor_Writer,
     binding: int,
@@ -450,41 +448,37 @@ descriptor_writer_write_image :: proc(
     type: vk.DescriptorType,
     loc := #caller_location,
 ) -> bool {
-    assert(sa.space(self.image_infos) != 0, "No space left in image_infos array", loc)
-    assert(sa.space(self.writes) != 0, "No space left in writes array", loc)
+    assert(cap(self.image_infos) != 0, "No space left in image_infos array", loc)
+    assert(cap(self.writes) != 0, "No space left in writes array", loc)
 
     // Add image info
-    sa.push_back(
-        &self.image_infos,
-        vk.DescriptorImageInfo{sampler = sampler, imageView = image, imageLayout = layout},
-    )
+    append(&self.image_infos,
+        vk.DescriptorImageInfo{sampler = sampler, imageView = image, imageLayout = layout})
 
-    info_ptr := sa.get_ptr(&self.image_infos, sa.len(self.image_infos) - 1)
+    info_ptr := &self.image_infos[len(self.image_infos) - 1]
 
     // Add write
-    sa.push_back(
-        &self.writes,
-        vk.WriteDescriptorSet {
-            sType           = .WRITE_DESCRIPTOR_SET,
-            dstBinding      = u32(binding),
-            dstSet          = 0, // Left empty for now until we need to write it
-            descriptorCount = 1,
-            descriptorType  = type,
-            pImageInfo      = info_ptr,
-        },
-    )
+    append(&self.writes, vk.WriteDescriptorSet {
+        sType           = .WRITE_DESCRIPTOR_SET,
+        dstBinding      = u32(binding),
+        dstSet          = 0, // Left empty for now until we need to write it
+        descriptorCount = 1,
+        descriptorType  = type,
+        pImageInfo      = info_ptr,
+    })
 
     return true
 }
 ```
 
 Very similar to the buffer one, but we have a different Info type, using a
-`vk.DescriptorImageInfo` instead. For that one, we need to give it a sampler, a image view, and
-what layout the image uses. The layout is going to be almost always either
+`vk.DescriptorImageInfo` instead. For that one, we need to give it a sampler, a image view,
+and what layout the image uses. The layout is going to be almost always either
 `SHADER_READ_ONLY_OPTIMAL`, the best layout to use for accessing textures in the shaders, or
 `GENERAL` when we are using them from compute shaders and writing them.
 
-The 3 parameters in the ImageInfo can be optional, depending on the specific `vk.DescriptorType`.
+The 3 parameters in the ImageInfo can be optional, depending on the specific
+`vk.DescriptorType`.
 
 * `.SAMPLER` is JUST the sampler, so it does not need `ImageView` or layout to be set.
 * `.SAMPLED_IMAGE` doesnt need the sampler set because its going to be accessed with different
@@ -495,17 +489,17 @@ The 3 parameters in the ImageInfo can be optional, depending on the specific `vk
 * `.STORAGE_IMAGE` was used back in chapter 2, it does not need sampler, and its used to allow
   compute shaders to directly access pixel data.
 
-In both the `write_image` and `write_buffer` procedures, we are being overly generic. This is done
-for simplicity, but if you want, you can add new ones like `write_sampler()` where it has
+In both the `write_image` and `write_buffer` procedures, we are being overly generic. This is
+done for simplicity, but if you want, you can add new ones like `write_sampler()` where it has
 `SAMPLER` and sets imageview and layout to zero, and other similar abstractions.
 
 With these done, we can perform the write itself.
 
-```odin
+```odin title="descriptor2.odin"
 descriptor_writer_clear :: proc(self: ^Descriptor_Writer) {
-    sa.clear(&self.image_infos)
-    sa.clear(&self.buffer_infos)
-    sa.clear(&self.writes)
+    clear(&self.image_infos)
+    clear(&self.buffer_infos)
+    clear(&self.writes)
 }
 
 descriptor_writer_update_set :: proc(
@@ -515,15 +509,15 @@ descriptor_writer_update_set :: proc(
 ) {
     assert(self.device != nil, "Invalid 'Device'", loc)
 
-    for &write in sa.slice(&self.writes) {
+    for &write in self.writes {
         write.dstSet = set
     }
 
-    if sa.len(self.writes) > 0 {
+    if len(self.writes) > 0 {
         vk.UpdateDescriptorSets(
             self.device,
-            u32(sa.len(self.writes)),
-            raw_data(sa.slice(&self.writes)),
+            u32(len(self.writes)),
+            raw_data(self.writes[:]),
             0,
             nil,
         )
@@ -593,33 +587,37 @@ resource lifetimes.
 
 We add it into `Frame_Data` struct.
 
-```odin
+```odin title="engine.odin"
 Frame_Data :: struct {
-    deletion_queue:    ^Deletion_Queue,
-    // Other fields above ---
-    frame_descriptors: Descriptor_Allocator_Growable,
+    command_pool:        vk.CommandPool,
+    main_command_buffer: vk.CommandBuffer,
+    swapchain_semaphore: vk.Semaphore,
+    render_fence:        vk.Fence,
+    deletion_queue:      Deletion_Queue,
+    // diff-add
+    frame_descriptors:   Descriptor_Allocator_Growable,
 }
 ```
 
 Now, lets initialize it when we initialize the swapchain and create these structs. Add this at
 the end of `engine_init_descriptors()`.
 
-```odin
+```odin title="init.odin"
 for &frame in self.frames {
     frame_sizes: Ratios
-    sa.push_back(&frame_sizes, Pool_Size_Ratio{.STORAGE_IMAGE, 3})
-    sa.push_back(&frame_sizes, Pool_Size_Ratio{.STORAGE_BUFFER, 3})
-    sa.push_back(&frame_sizes, Pool_Size_Ratio{.UNIFORM_BUFFER, 3})
-    sa.push_back(&frame_sizes, Pool_Size_Ratio{.COMBINED_IMAGE_SAMPLER, 4})
+    append(&frame_sizes, Pool_Size_Ratio{.STORAGE_IMAGE, 3})
+    append(&frame_sizes, Pool_Size_Ratio{.STORAGE_BUFFER, 3})
+    append(&frame_sizes, Pool_Size_Ratio{.UNIFORM_BUFFER, 3})
+    append(&frame_sizes, Pool_Size_Ratio{.COMBINED_IMAGE_SAMPLER, 4})
 
     descriptor_growable_init(
         &frame.frame_descriptors,
         self.vk_device,
         1000,
-        sa.slice(&frame_sizes),
+        frame_sizes[:],
     )
 
-    deletion_queue_push(&self.main_deletion_queue, &frame.frame_descriptors)
+    deletion_queue_push(&self.main_deletion_queue, frame.frame_descriptors)
 }
 ```
 
@@ -634,6 +632,8 @@ Resource :: union {
 deletion_queue_flush :: proc(queue: ^Deletion_Queue) {
     #reverse for &resource in queue.resources {
         switch &res in resource {
+        // Other cases...
+
         // Higher-level custom resources
         case Descriptor_Allocator_Growable:
             descriptor_growable_destroy_pools(res)
@@ -650,7 +650,8 @@ the start of `engine_draw()`.
 vk_check(vk.WaitForFences(self.vk_device, 1, &frame.render_fence, true, 1e9)) or_return
 
 deletion_queue_flush(&frame.deletion_queue)
-descriptor_growable_clear_pools(&frame.frame_descriptors) // < new
+// highlight-next-line
+descriptor_growable_clear_pools(&frame.frame_descriptors)
 ```
 
 Now that we can allocate descriptor sets dynamically, we will be allocating the buffer that
@@ -676,7 +677,7 @@ GPU_Scene_Data :: struct {
 
 Add a new descriptor Layout on the `Engine` structure.
 
-```odin
+```odin title="engine.odin"
 Engine :: struct {
     // Scene
     scene_data:                       GPU_Scene_Data,
@@ -689,17 +690,15 @@ set with a single uniform buffer binding. We use uniform buffer here instead of 
 because this is a small buffer. We arent using it through buffer device adress because we have
 a single descriptor set for all objects so there isnt any overhead of managing it.
 
-```odin
+```odin title="engine.odin"
 {
     builder: Descriptor_Layout_Builder
     descriptor_layout_builder_init(&builder, self.vk_device)
     descriptor_layout_builder_add_binding(&builder, 0, .UNIFORM_BUFFER)
-    self.gpu_scene_data_descriptor_layout = descriptor_layout_builder_build(
-        &builder,
-        {.VERTEX, .FRAGMENT},
-    ) or_return
+    self.gpu_scene_data_descriptor_layout =
+        descriptor_layout_builder_build(&builder, {.VERTEX, .FRAGMENT}) or_return
+    deletion_queue_push(&self.main_deletion_queue, self.gpu_scene_data_descriptor_layout)
 }
-deletion_queue_push(&self.main_deletion_queue, self.gpu_scene_data_descriptor_layout)
 ```
 
 Now, we will create this descriptor set every frame, inside the `engine_draw_geometry()`
@@ -708,7 +707,7 @@ you could do temporal per-frame data that is dynamically created. It would be be
 the buffers cached in our `Frame_Data` structure, but we will be doing it this way to show how.
 There are cases with dynamic draws and passes where you might want to do it this way.
 
-```odin
+```odin title="drawing.odin"
 engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool) {
     // ...
 
@@ -728,7 +727,7 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
         self,
         size_of(GPU_Scene_Data),
         {.UNIFORM_BUFFER},
-        .Cpu_To_Gpu,
+        .CPU_TO_GPU,
     ) or_return
 
     // Add it to the deletion queue of this frame so it gets deleted once its been used
@@ -736,7 +735,7 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
     deletion_queue_push(&frame.deletion_queue, gpu_scene_data_buffer)
 
     // Write the buffer
-    scene_uniform_data := cast(^GPU_Scene_Data)gpu_scene_data_buffer.info.mapped_data
+    scene_uniform_data := cast(^GPU_Scene_Data)gpu_scene_data_buffer.info.pMappedData
     scene_uniform_data^ = self.scene_data
 
     // Create a descriptor set that binds that buffer and update it

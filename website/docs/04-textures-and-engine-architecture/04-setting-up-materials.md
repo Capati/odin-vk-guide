@@ -10,7 +10,7 @@ shaders we use.
 
 Create a new file called `materials.odin` and add these structures.
 
-```odin
+```odin title="materials.odin"
 package vk_guide
 
 // Core
@@ -44,7 +44,7 @@ set too.
 For creating those objects, we are going to wrap the logic into a struct, as `Engine` is
 getting too big, and we will want to have multiple materials later.
 
-```odin
+```odin title="materials.odin"
 Metallic_Roughness_Constants :: struct {
     color_factors:       la.Vector4f32,
     metal_rough_factors: la.Vector4f32,
@@ -125,23 +125,19 @@ built `Material_Instance` struct we can then use when rendering.
 
 Lets look at the implementation of those procedures.
 
-```odin
+```odin title="materials.odin"
 metallic_roughness_build_pipelines :: proc(
     self: ^Metallic_Roughness,
     engine: ^Engine,
 ) -> (
     ok: bool,
 ) {
-    mesh_frag_shader := create_shader_module(
-        engine.vk_device,
-        #load("./../../shaders/compiled/mesh.frag.spv"),
-    ) or_return
+    mesh_frag_shader := create_shader_module(engine.vk_device,
+        #load("./../shaders/compiled/mesh.frag.spv")) or_return
     defer vk.DestroyShaderModule(engine.vk_device, mesh_frag_shader, nil)
 
-    mesh_vert_shader := create_shader_module(
-        engine.vk_device,
-        #load("./../../shaders/compiled/mesh.vert.spv"),
-    ) or_return
+    mesh_vert_shader := create_shader_module(engine.vk_device,
+        #load("./../shaders/compiled/mesh.vert.spv")) or_return
     defer vk.DestroyShaderModule(engine.vk_device, mesh_vert_shader, nil)
 
     self.device = engine.vk_device
@@ -151,10 +147,8 @@ metallic_roughness_build_pipelines :: proc(
     descriptor_layout_builder_add_binding(&layout_builder, 0, .UNIFORM_BUFFER)
     descriptor_layout_builder_add_binding(&layout_builder, 1, .COMBINED_IMAGE_SAMPLER)
     descriptor_layout_builder_add_binding(&layout_builder, 2, .COMBINED_IMAGE_SAMPLER)
-    self.material_layout = descriptor_layout_builder_build(
-        &layout_builder,
-        {.VERTEX, .FRAGMENT},
-    ) or_return
+    self.material_layout =
+        descriptor_layout_builder_build(&layout_builder, {.VERTEX, .FRAGMENT}) or_return
 
     layouts := [2]vk.DescriptorSetLayout {
         engine.gpu_scene_data_descriptor_layout,
@@ -174,9 +168,8 @@ metallic_roughness_build_pipelines :: proc(
     pipeline_layout_info.pushConstantRangeCount = 1
 
     new_layout: vk.PipelineLayout
-    vk_check(
-        vk.CreatePipelineLayout(engine.vk_device, &pipeline_layout_info, nil, &new_layout),
-    ) or_return
+    vk_check(vk.CreatePipelineLayout(
+        engine.vk_device, &pipeline_layout_info, nil, &new_layout)) or_return
     defer if !ok {
         vk.DestroyPipelineLayout(engine.vk_device, new_layout, nil)
     }
@@ -196,7 +189,8 @@ metallic_roughness_build_pipelines :: proc(
     pipeline_builder_enable_depth_test(&pipeline_builder, true, .GREATER_OR_EQUAL)
 
     // Render format
-    pipeline_builder_set_color_attachment_format(&pipeline_builder, engine.draw_image.image_format)
+    pipeline_builder_set_color_attachment_format(
+        &pipeline_builder, engine.draw_image.image_format)
     pipeline_builder_set_depth_attachment_format(
         &pipeline_builder,
         engine.depth_image.image_format,
@@ -206,10 +200,8 @@ metallic_roughness_build_pipelines :: proc(
     pipeline_builder.pipeline_layout = new_layout
 
     // Finally build the pipeline
-    self.opaque_pipeline.pipeline = pipeline_builder_build(
-        &pipeline_builder,
-        engine.vk_device,
-    ) or_return
+    self.opaque_pipeline.pipeline =
+        pipeline_builder_build(&pipeline_builder, engine.vk_device) or_return
     defer if !ok {
         vk.DestroyPipeline(engine.vk_device, self.opaque_pipeline.pipeline, nil)
     }
@@ -218,10 +210,8 @@ metallic_roughness_build_pipelines :: proc(
     pipeline_builder_enable_blending_additive(&pipeline_builder)
     pipeline_builder_enable_depth_test(&pipeline_builder, false, .GREATER_OR_EQUAL)
 
-    self.transparent_pipeline.pipeline = pipeline_builder_build(
-        &pipeline_builder,
-        engine.vk_device,
-    ) or_return
+    self.transparent_pipeline.pipeline =
+        pipeline_builder_build(&pipeline_builder, engine.vk_device) or_return
     defer if !ok {
         vk.DestroyPipeline(engine.vk_device, self.transparent_pipeline.pipeline, nil)
     }
@@ -389,7 +379,7 @@ need something that has a small amount of light calculation to display the mater
 Lets go back to the `Metallic_Roughness_Constants` and fill the `write_material` procedure that
 will create the descriptor sets and set the parameters.
 
-```odin
+```odin title="materials.odin"
 metallic_roughness_write :: proc(
     self: ^Metallic_Roughness,
     device: vk.Device,
@@ -409,10 +399,7 @@ metallic_roughness_write :: proc(
     }
 
     material.material_set = descriptor_allocator_allocate(
-        descriptor_allocator,
-        device,
-        &self.material_layout,
-    ) or_return
+        descriptor_allocator, device, &self.material_layout) or_return
 
     descriptor_writer_init(&self.writer, device)
     descriptor_writer_clear(&self.writer)
@@ -457,7 +444,7 @@ engine.
 Lets first add the material structure to `Engine`, and a `Material_Instance` struct to use for
 default.
 
-```odin
+```odin title="engine.odin"
 Engine :: struct {
     // Materials
     default_material_data:         Material_Instance,
@@ -468,10 +455,11 @@ Engine :: struct {
 At the end of `engine_init_pipelines` we call the `build_pipelines` procedure on the material
 structure to compile it.
 
-```odin
+```odin title="init.odin"
 engine_init_pipelines :: proc(self: ^Engine) -> (ok: bool) {
     // Rest of initializing procedures
 
+    // Materials pipeline
     metallic_roughness_build_pipelines(&self.metal_rough_material, self) or_return
     deletion_queue_push(&self.main_deletion_queue, self.metal_rough_material)
 
@@ -490,6 +478,8 @@ Resource :: union {
 deletion_queue_flush :: proc(self: ^Deletion_Queue) {
     #reverse for &resource in self.resources {
         switch &res in resource {
+        // Other cases...
+
         // Higher-level custom resources
         case Metallic_Roughness:
             metallic_roughness_clear_resources(res)
@@ -504,11 +494,11 @@ are going to allocate the buffer and then put it into a deletion queue, but its 
 global deletion queue. We wont need to access the default material constant buffer at any point
 after creating it
 
-```odin
+```odin title="init.odin"
 engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
     // Other code above ---
 
-    // DDefault the material textures
+    // Default material textures
     material_resources := Metallic_Roughness_Resources {
         color_image         = self.white_image,
         color_sampler       = self.default_sampler_linear,
@@ -521,12 +511,13 @@ engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
         self,
         size_of(Metallic_Roughness_Constants),
         {.UNIFORM_BUFFER},
-        .Cpu_To_Gpu,
+        .CPU_TO_GPU,
     ) or_return
     deletion_queue_push(&self.main_deletion_queue, material_constants)
 
     // Write the buffer
-    scene_uniform_data := cast(^Metallic_Roughness_Constants)material_constants.info.mapped_data
+    scene_uniform_data :=
+        cast(^Metallic_Roughness_Constants)material_constants.info.pMappedData
     scene_uniform_data.color_factors = {1, 1, 1, 1}
     scene_uniform_data.metal_rough_factors = {1, 0.5, 0, 0}
 
@@ -545,7 +536,55 @@ engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
 }
 ```
 
-We are going to fill the parameters of the material on `Material_Resources` with the default white
-image. Then we create a buffer to hold the material color, and add it for deletion. Then we
-call `write_material` to create the descriptor set and initialize that `default_material_data` material
-properly.
+We are going to fill the parameters of the material on `Material_Resources` with the default
+white image. Then we create a buffer to hold the material color, and add it for deletion. Then
+we call `write_material` to create the descriptor set and initialize that
+`default_material_data` material properly.
+
+Before this will work without validation errors, we need to go back to
+`engine_init_descriptors` and adjust the pool sizes on `global_descriptor_allocator`. That
+allocator was originally sized only for the compute draw-image descriptor:
+
+```odin
+sizes := []Pool_Size_Ratio{{.STORAGE_IMAGE, 1}}
+```
+
+But `metallic_roughness_write` above allocates its descriptor set from this same allocator,
+using the material layout, which has 3 bindings: one `UNIFORM_BUFFER` (the material
+constants we just wrote), and two `COMBINED_IMAGE_SAMPLER` (the color and metal-roughness
+textures). A `vk.DescriptorPool` needs a `vk.DescriptorPoolSize` entry for every descriptor
+type that will ever be allocated from it, so with only `STORAGE_IMAGE` provisioned, this call
+will trigger validation warnings like:
+
+```text
+vkAllocateDescriptorSets(): pAllocateInfo->pSetLayouts[0] binding 0 was created with
+VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER but VkDescriptorPool ... was not created with any
+VkDescriptorPoolSize::type with VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+```
+
+and similarly for `VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER`. Some drivers won't correctly
+return `VK_ERROR_OUT_OF_POOL_MEMORY` in this situation as they should, so the allocation may
+silently "work" while still being invalid Vulkan usage.
+
+To fix this, update the `sizes` in `engine_init_descriptors` to also cover the types this
+default-material allocation needs:
+
+```odin title="init.odin"
+sizes := []Pool_Size_Ratio{
+    {.STORAGE_IMAGE, 1},
+    {.UNIFORM_BUFFER, 1},
+    {.COMBINED_IMAGE_SAMPLER, 2},
+}
+
+descriptor_allocator_init_pool(
+    &self.global_descriptor_allocator, self.vk_device, 10, sizes) or_return
+```
+
+`UNIFORM_BUFFER` is added because binding 0 of the material layout points at
+`material_constants`, the small buffer holding `color_factors` and `metal_rough_factors` that
+we just created and wrote above — that buffer is bound as a `UNIFORM_BUFFER` descriptor, so
+the pool that allocates this set needs a matching `UNIFORM_BUFFER` pool size, exactly the same
+way it already needs `STORAGE_IMAGE` for the compute draw-image descriptor.
+
+`COMBINED_IMAGE_SAMPLER` is given a count of 2 since the material layout binds two of them per
+set (the color texture and the metal-roughness texture).

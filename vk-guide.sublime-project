@@ -1,0 +1,142 @@
+{
+    "folders":
+    [
+        {
+            "path": "."
+        }
+    ],
+    "build_systems": [
+        {
+            "name": "Odin Run (Debug)",
+            "working_dir": "${project_path}",
+            "file_regex": "^(.+)\\(([0-9]+):([0-9]+)\\) (.+)$",
+            "variants": [
+                {
+                    "name": "My Project",
+                    "windows": {
+                        "cmd": [
+                            "cmd", "/c", "build.bat", "src", "run"
+                        ],
+                    },
+                    "linux": {
+                        "cmd": [ "./build.sh", "src", "run" ],
+                    },
+                    "osx": {
+                        "cmd": [ "./build.sh", "src", "run" ],
+                    },
+                },
+                {
+                    "name": "00 - Project Setup",
+                    "windows": {
+                        "cmd": [
+                            "cmd", "/c", "build.bat", "tutorial\\00_project_setup", "run"
+                        ],
+                    },
+                    "linux": {
+                        "cmd": [ "./build.sh", "tutorial/00_project_setup", "run" ],
+                    },
+                    "osx": {
+                        "cmd": [ "./build.sh", "tutorial/00_project_setup", "run" ],
+                    },
+                },
+                {
+                    "name": "01 - Initializing Vulkan",
+                    "windows": {
+                        "cmd": [
+                            "cmd", "/c", "build.bat", "tutorial\\01_initializing_vulkan", "run"
+                        ],
+                    },
+                    "linux": {
+                        "cmd": [ "./build.sh", "tutorial/01_initializing_vulkan", "run" ],
+                    },
+                    "osx": {
+                        "cmd": [ "./build.sh", "tutorial/01_initializing_vulkan", "run" ],
+                    },
+                },
+                {
+                    "name": "02 - Drawing With Compute",
+                    "windows": {
+                        "cmd": [
+                            "cmd", "/c", "build.bat", "tutorial\\02_drawing_with_compute", "run"
+                        ],
+                    },
+                    "linux": {
+                        "cmd": [ "./build.sh", "tutorial/02_drawing_with_compute", "run" ],
+                    },
+                    "osx": {
+                        "cmd": [ "./build.sh", "tutorial/02_drawing_with_compute", "run" ],
+                    },
+                },
+                {
+                    "name": "03 - Graphics Pipelines",
+                    "windows": {
+                        "cmd": [
+                            "cmd", "/c", "build.bat", "tutorial\\03_graphics_pipelines", "run"
+                        ],
+                    },
+                    "linux": {
+                        "cmd": [ "./build.sh", "tutorial/03_graphics_pipelines", "run" ],
+                    },
+                    "osx": {
+                        "cmd": [ "./build.sh", "tutorial/03_graphics_pipelines", "run" ],
+                    },
+                },
+                {
+                    "name": "04 - Textures and Engine Architecture",
+                    "windows": {
+                        "cmd": [
+                            "cmd", "/c", "build.bat",
+                            "tutorial\\04_textures_and_engine_architecture", "run"
+                        ],
+                    },
+                    "linux": {
+                        "cmd": [
+                            "./build.sh", "tutorial/04_textures_and_engine_architecture", "run"
+                        ],
+                    },
+                    "osx": {
+                        "cmd": [
+                            "./build.sh", "tutorial/04_textures_and_engine_architecture", "run"
+                        ],
+                    },
+                },
+                {
+                    "name": "05 - Scene Graph",
+                    "windows": {
+                        "cmd": [
+                            "cmd", "/c", "build.bat", "tutorial\\05_scene_graph", "run"
+                        ],
+                    },
+                    "linux": {
+                        "cmd": [ "./build.sh", "tutorial/05_scene_graph", "run" ],
+                    },
+                    "osx": {
+                        "cmd": [ "./build.sh", "tutorial/05_scene_graph", "run" ],
+                    },
+                },
+                {
+                    "name": "06 - GLTF Loading",
+                    "windows": {
+                        "cmd": [
+                            "cmd", "/c", "build.bat", "tutorial\\06_gltf_loading", "run"
+                        ],
+                    },
+                    "linux": {
+                        "cmd": [ "./build.sh", "tutorial/06_gltf_loading", "run" ],
+                    },
+                    "osx": {
+                        "cmd": [ "./build.sh", "tutorial/06_gltf_loading", "run" ],
+                    },
+                },
+            ],
+        }
+    ],
+    "settings": {
+        "auto_complete": false,
+        "LSP": {
+            "odin": {
+                "enabled": true,
+            },
+        },
+    },
+}

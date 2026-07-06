@@ -27,7 +27,7 @@ reference to help you if you get stuck.
   - For Unix, also requires **GNU libc 2.38**
 - [Git](http://git-scm.com/downloads) - required for the companion Git project and to clone
 library dependencies
-- C++ compiler - `vs2022` on Windows or `g++/clang` on Unix
+- C++ compiler - `vs2026` on Windows or `g++/clang` on Unix
 
 ## Prepare the Project
 
@@ -65,19 +65,19 @@ Make sure you have installed all the **prerequisites** listed above before conti
     them before proceeding. Other libraries are either in `vendor` or does not require
     compilation.
 
-### Pre-Compiled Binaries for Windows
+### Pre-Compiled Binaries
 
-If you're using Windows and would rather not compile the libraries yourself—or if you run into
-problems with the build tools—you can opt for pre-compiled binaries instead.
+If you prefer not to compile the libraries yourself, or if you encounter problems with the
+build tools, you can use the precompiled binaries instead.
 
-These binaries include the **VMA** and **ImGui** libraries:
+These binaries include the **VMA** and **ImGui** libraries both for Windows and Linux:
 
 [https://capati.github.io/odin-vk-guide/odin-vk-guide-libs.zip](https://capati.github.io/odin-vk-guide/odin-vk-guide-libs.zip)
 
 After downloading, simply copy or move each library file to its corresponding folder:
 
-- `imgui_windows_x64.lib` - Copy to `libs/imgui`
-- `vma_windows_x86_64.lib` - Copy to `libs/vma`
+- `imgui_windows_x64.lib`, `libimgui_linux_x64.a` - Copy to `libs/imgui`
+- `vma_windows_x86_64.lib`, `libvma_linux_x86_64.a` - Copy to `libs/vma`
 
 ## Building Project
 
@@ -92,21 +92,21 @@ odin run ./tutorial/02_drawing_with_compute -debug --out:./build/02_drawing_with
   execute the program.
 
 - `./tutorial/02_drawing_with_compute` - This specifies the path to the Odin source code
-directory that contains the program to be compiled and run. It's looking for the main package
-in the `02_drawing_with_compute` directory inside the `tutorial` folder.
+  directory that contains the program to be compiled and run. It's looking for the main
+  package in the `02_drawing_with_compute` directory inside the `tutorial` folder.
 
 - `--debug` - This option compiles the program with debug information.
 
 - `--out:./build/02_drawing_with_compute.exe` - This option defines where the compiled
-executable should be saved. In this case, it will create `02_drawing_with_compute.exe` in the
-`./build` directory. On Windows, you need to specify the executable name including the `.exe`
-extension, on Unix, you can omit the extension.
+  executable should be saved. In this case, it will create `02_drawing_with_compute.exe` in
+  the `./build` directory. On Windows, you need to specify the executable name including the
+  `.exe` extension, on Unix, you can omit the extension.
 
-- `--collection:libs=./libs` - This option adds a collection path. Collections in Odin are a way
-to organize packages. This tells the compiler to look for additional packages in the `./libs`
-directory, this is where the external libraries is located.
+- `--collection:libs=./libs` - This option adds a collection path. Collections in Odin are a
+  way to organize packages. This tells the compiler to look for additional packages in the
+  `./libs` directory, this is where the external libraries is located.
 
-  :::danger[Collections]
+  :::warning[Collections]
 
   The tutorial uses the `libs` folder as a collection. Failing to do so will result in an error
   stating `Unknown library collection: 'libs'`. Ensure that the `libs` folder is correctly
@@ -213,3 +213,67 @@ Just make sure the `options` match the folders name.
 Learn more about tasks from the official tutorial [Integrate with External Tools via Tasks][].
 
 [Integrate with External Tools via Tasks]: https://code.visualstudio.com/Docs/editor/tasks
+
+### Sublime Text Project
+
+If you are using **Sublime Text** and prefer some UI to help build the tutorial, there is the
+option to use the project settings.
+
+```json title="vk-guide.sublime-project"
+{
+    "folders":
+    [
+        {
+            "path": "."
+        }
+    ],
+    "build_systems": [
+        {
+            "name": "Odin Run (Debug)",
+            "working_dir": "${project_path}",
+            "file_regex": "^(.+)\\(([0-9]+):([0-9]+)\\) (.+)$",
+            "variants": [
+                {
+                    "name": "00 - Project Setup",
+                    "windows": {
+                        "cmd": [
+                            "cmd", "/c", "build.bat", "tutorial\\00_project_setup", "run"
+                        ],
+                    },
+                    "linux": {
+                        "cmd": [ "./build.sh", "tutorial/00_project_setup", "run" ],
+                    },
+                    "osx": {
+                        "cmd": [ "./build.sh", "tutorial/00_project_setup", "run" ],
+                    },
+                },
+                // ...
+            ],
+        }
+    ],
+    "settings": {
+        "auto_complete": false,
+        "LSP": {
+            "odin": {
+                "enabled": true,
+            },
+        },
+    },
+}
+```
+
+Note that we’re still relying on the provided scripts to build the examples. By default, the
+`cmd` builds from the `tutorial` folder. But you can modify it to point to your own `src`
+directory instead:
+
+```json
+"windows": {
+  "cmd": [
+    "cmd", "/c", "build.bat", "src\\03_graphics_pipelines", "run"
+  ],
+},
+```
+
+You can learn more in how to setup Sublime Text with Odin in the video [Sublime Text + Odin +
+Code completion](https://www.youtube.com/watch?v=RF2MgVqfBV8&t=3s) from **Karl Zylinski**, he
+also explains how `.sublime-project` files works.

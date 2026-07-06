@@ -100,8 +100,10 @@ arbitrary GPU work whenever it’s needed.
 
 To begin, lets add some fields into the `Engine` structure.
 
-```odin
+```odin title="engine.odin"
 Engine :: struct {
+    // ...
+
     // Immediate submit
     imm_fence:          vk.Fence,
     imm_command_buffer: vk.CommandBuffer,
@@ -114,22 +116,25 @@ We have a fence and a command buffer with its pool.
 We need to create those syncronization structures for immediate submit, so lets go into
 `engine_init_commands()` procedure and hook the command part.
 
-```odin
+```odin title="engine.odin"
 engine_init_commands :: proc(self: ^Engine) -> (ok: bool) {
-    // Other code ---
+    // ...
 
-    vk_check(
-        vk.CreateCommandPool(self.vk_device, &command_pool_info, nil, &self.imm_command_pool),
-    ) or_return
+    for &frame in self.frames {
+        // ...
+    }
+    // highlight-start
+
+    vk_check(vk.CreateCommandPool(
+        self.vk_device, &command_pool_info, nil, &self.imm_command_pool)) or_return
 
     // Allocate the command buffer for immediate submits
     cmd_alloc_info := command_buffer_allocate_info(self.imm_command_pool)
-    vk_check(
-        vk.AllocateCommandBuffers(self.vk_device, &cmd_alloc_info, &self.imm_command_buffer),
-    ) or_return
-
+    vk_check(vk.AllocateCommandBuffers(
+        self.vk_device, &cmd_alloc_info, &self.imm_command_buffer)) or_return
     deletion_queue_push(&self.main_deletion_queue, self.imm_command_pool)
 
+    // highlight-end
     return true
 }
 ```
@@ -140,14 +145,21 @@ putting it into the deletion queue for cleanup.
 Now we need to create the fence, which we are going to add to `engine_init_sync_structures()`.
 Add it to the end.
 
-```odin
+```odin title="engine.odin"
+@(require_results)
 engine_init_sync_structures :: proc(self: ^Engine) -> (ok: bool) {
-    // Other code ---
+    // ...
 
-    vk_check(vk.CreateFence(self.vk_device, &fence_create_info, nil, &self.imm_fence)) or_return
+    for &frame in self.frames {
+        // ...
+    }
+    // highlight-start
 
+    vk_check(vk.CreateFence(
+        self.vk_device, &fence_create_info, nil, &self.imm_fence)) or_return
     deletion_queue_push(&self.main_deletion_queue, self.imm_fence)
 
+    // highlight-end
     return true
 }
 ```
@@ -157,7 +169,7 @@ the commands, we are directly adding its destroy procedure to the deletion queue
 
 Now implement the `engine_immediate_submit` procedure.
 
-```odin
+```odin title="engine.odin"
 engine_immediate_submit :: proc(
     self: ^Engine,
     data: $T,
@@ -217,10 +229,10 @@ buffers.
 
 Add this to `core.odin`.
 
-```odin
+```odin title="core.odin"
 Allocated_Buffer :: struct {
     buffer:     vk.Buffer,
-    info:       vma.Allocation_Info,
+    info:       vma.AllocationInfo,
     allocation: vma.Allocation,
     allocator:  vma.Allocator,
 }
@@ -236,12 +248,12 @@ usage flags, and the vma memory usage so that we can control where the buffer me
 
 This is the implementation.
 
-```odin
+```odin title="core.odin"
 create_buffer :: proc(
     self: ^Engine,
     alloc_size: vk.DeviceSize,
     usage: vk.BufferUsageFlags,
-    memory_usage: vma.Memory_Usage,
+    memory_usage: vma.MemoryUsage,
 ) -> (
     new_buffer: Allocated_Buffer,
     ok: bool,
@@ -253,16 +265,16 @@ create_buffer :: proc(
         usage = usage,
     }
 
-    vma_alloc_info := vma.Allocation_Create_Info {
+    vma_alloc_info := vma.AllocationCreateInfo {
         usage = memory_usage,
-        flags = {.Mapped},
+        flags = {.MAPPED},
     }
 
     new_buffer.allocator = self.vma_allocator
 
     // allocate the buffer
     vk_check(
-        vma.create_buffer(
+        vma.CreateBuffer(
             self.vma_allocator,
             buffer_info,
             vma_alloc_info,
@@ -303,9 +315,9 @@ from CPU. VMA will store that pointer as part of the allocationInfo.
 With a create buffer procedure, we also need a destroy buffer procedure. The only thing we need
 to do is to call `vma.destroy_buffer`.
 
-```odin
+```odin title="core.odin"
 destroy_buffer :: proc(self: Allocated_Buffer) {
-    vma.destroy_buffer(self.allocator, self.buffer, self.allocation)
+    vma.DestroyBuffer(self.allocator, self.buffer, self.allocation)
 }
 ```
 
@@ -321,6 +333,8 @@ Resource :: union {
 deletion_queue_flush :: proc(queue: ^Deletion_Queue) {
     #reverse for &resource in queue.resources {
         switch &res in resource {
+        // Other cases...
+
         // Higher-level custom resources
         case Allocated_Buffer:
             destroy_buffer(res)
@@ -385,11 +399,10 @@ upload_mesh :: proc(
     index_buffer_size := vk.DeviceSize(len(indices) * size_of(u32))
 
     // Create vertex buffer
-    new_surface.vertex_buffer = create_buffer(
-        self,
+    new_surface.vertex_buffer = create_buffer(self,
         vertex_buffer_size,
         {.STORAGE_BUFFER, .TRANSFER_DST, .SHADER_DEVICE_ADDRESS},
-        .Gpu_Only,
+        .GPU_ONLY,
     ) or_return
     defer if !ok {
         destroy_buffer(new_surface.vertex_buffer)
@@ -406,11 +419,10 @@ upload_mesh :: proc(
     )
 
     // Create index buffer
-    new_surface.index_buffer = create_buffer(
-        self,
+    new_surface.index_buffer = create_buffer(self,
         index_buffer_size,
         {.INDEX_BUFFER, .TRANSFER_DST},
-        .Gpu_Only,
+        .GPU_ONLY,
     ) or_return
     defer if !ok {
         destroy_buffer(new_surface.index_buffer)
@@ -455,17 +467,16 @@ upload_mesh :: proc(
     new_surface: GPU_Mesh_Buffers,
     ok: bool,
 ) {
-    // Other code ---
+    // ...
 
-    staging := create_buffer(
-        self,
+    staging := create_buffer(self,
         vertex_buffer_size + index_buffer_size,
         {.TRANSFER_SRC},
-        .Cpu_Only,
+        .CPU_ONLY,
     ) or_return
     defer destroy_buffer(staging)
 
-    data := staging.info.mapped_data
+    data := staging.info.pMappedData
     // Copy vertex buffer
     intr.mem_copy(data, raw_data(vertices), vertex_buffer_size)
     // Copy index buffer
@@ -665,30 +676,38 @@ Lets create the pipeline now. We will create a new pipeline procedure, separate 
 
 Add this to `Engine` structure.
 
-```odin
+```odin title="engine.odin"
 Engine :: struct {
-    mesh_pipeline_layout: vk.PipelineLayout,
-    mesh_pipeline:        vk.Pipeline,
-    rectangle:            GPU_Mesh_Buffers,
+    // ...
+
+    // Rendering resources
+    draw_image:                   Allocated_Image,
+    draw_extent:                  vk.Extent2D,
+    gradient_pipeline_layout:     vk.PipelineLayout,
+    background_effects:           [Compute_Effect_Kind]Compute_Effect,
+    current_background_effect:    Compute_Effect_Kind,
+    triangle_pipeline_layout:     vk.PipelineLayout,
+    triangle_pipeline:            vk.Pipeline,
+    // diff-add-start
+    mesh_pipeline_layout:         vk.PipelineLayout,
+    mesh_pipeline:                vk.Pipeline,
+    rectangle:                    GPU_Mesh_Buffers,
+    // diff-add-end
 }
 ```
 
 Lets add the `engine_init_mesh_pipeline`, its going to be mostly a copypaste of
 `engine_init_triangle_pipeline()`.
 
-```odin
+```odin title="engine.odin"
 engine_init_mesh_pipeline :: proc(self: ^Engine) -> (ok: bool) {
-    triangle_frag_shader := create_shader_module(
-        self.vk_device,
-        #load("./../../shaders/compiled/colored_triangle.frag.spv"),
-    ) or_return
-    defer vk.DestroyShaderModule(self.vk_device, triangle_frag_shader, nil)
+    mesh_frag_shader := create_shader_module(self.vk_device,
+        #load("./../shaders/compiled/colored_triangle.frag.spv")) or_return
+    defer vk.DestroyShaderModule(self.vk_device, mesh_frag_shader, nil)
 
-    triangle_vertex_shader := create_shader_module(
-        self.vk_device,
-        #load("./../../shaders/compiled/colored_triangle_mesh.vert.spv"),
-    ) or_return
-    defer vk.DestroyShaderModule(self.vk_device, triangle_vertex_shader, nil)
+    mesh_vertex_shader := create_shader_module(self.vk_device,
+        #load("./../shaders/compiled/colored_triangle_mesh.vert.spv")) or_return
+    defer vk.DestroyShaderModule(self.vk_device, mesh_vertex_shader, nil)
 
     buffer_range := vk.PushConstantRange {
         offset     = 0,
@@ -700,15 +719,13 @@ engine_init_mesh_pipeline :: proc(self: ^Engine) -> (ok: bool) {
     pipeline_layout_info.pPushConstantRanges = &buffer_range
     pipeline_layout_info.pushConstantRangeCount = 1
 
-    vk_check(
-        vk.CreatePipelineLayout(
-            self.vk_device,
-            &pipeline_layout_info,
-            nil,
-            &self.triangle_pipeline_layout,
-        ),
-    ) or_return
-    deletion_queue_push(&self.main_deletion_queue, self.triangle_pipeline_layout)
+    vk_check(vk.CreatePipelineLayout(
+        self.vk_device,
+        &pipeline_layout_info,
+        nil,
+        &self.mesh_pipeline_layout,
+    )) or_return
+    deletion_queue_push(&self.main_deletion_queue, self.mesh_pipeline_layout)
 
     return true
 }
@@ -720,7 +737,7 @@ pipeline layout to give it the push constants struct we defined above.
 For the rest of the procedure, we do the same as in the triangle pipeline procedure, but
 changing the pipeline layout and the pipeline name to be the new ones.
 
-```odin
+```odin title="engine.odin"
 engine_init_mesh_pipeline :: proc(self: ^Engine) -> (ok: bool) {
     // Other code ---
 
@@ -729,7 +746,7 @@ engine_init_mesh_pipeline :: proc(self: ^Engine) -> (ok: bool) {
     // Use the triangle layout we created
     builder.pipeline_layout = self.mesh_pipeline_layout
     // Add the vertex and pixel shaders to the pipeline
-    pipeline_builder_set_shaders(&builder, triangle_vertex_shader, triangle_frag_shader)
+    pipeline_builder_set_shaders(&builder, mesh_vertex_shader, mesh_frag_shader)
     // It will draw triangles
     pipeline_builder_set_input_topology(&builder, .TRIANGLE_LIST)
     // Filled triangles
@@ -757,10 +774,10 @@ engine_init_mesh_pipeline :: proc(self: ^Engine) -> (ok: bool) {
 
 Now we call this procedure from our main `engine_init_pipelines()` procedure.
 
-```odin
+```odin title="engine.odin"
 engine_init_pipelines :: proc(self: ^Engine) -> (ok: bool) {
     // Compute pipelines
-    engine_init_background_pipeline(self) or_return
+    engine_init_background_pipelines(self) or_return
 
     // Graphics pipelines
     engine_init_triangle_pipeline(self) or_return
@@ -774,7 +791,7 @@ Next we need to create and upload the mesh. We create a new initialization proce
 `engine_init_default_data()` for our default data in the engine. Add it into the main
 `engine_init()` procedure, at the end.
 
-```odin
+```odin title="engine.odin"
 engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
     // odinfmt: disable
     rect_vertices := [4]Vertex {
@@ -790,7 +807,7 @@ engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
     }
     // odinfmt: enable
 
-    self.rectangle := upload_mesh(self, rect_indices[:], rect_vertices[:]) or_return
+    self.rectangle = upload_mesh(self, rect_indices[:], rect_vertices[:]) or_return
 
     // Delete the rectangle data on engine shutdown
     deletion_queue_push(&self.main_deletion_queue, self.rectangle.index_buffer)
@@ -806,17 +823,44 @@ all into buffers.
 We can now execute the draw. We will add the new draw command on `engine_draw_geometry()`
 procedure, after the triangle we had.
 
-```odin
+```odin title="engine.odin"
 engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool) {
+    // Begin a render pass connected to our draw image
+    color_attachment := attachment_info(self.draw_image.image_view, nil, .COLOR_ATTACHMENT_OPTIMAL)
+
+    render_info := rendering_info(self.draw_extent, &color_attachment, nil)
+    vk.CmdBeginRendering(cmd, &render_info)
+
+    // Set dynamic viewport and scissor
+    viewport := vk.Viewport {
+        x        = 0,
+        y        = 0,
+        width    = f32(self.draw_extent.width),
+        height   = f32(self.draw_extent.height),
+        minDepth = 0.0,
+        maxDepth = 1.0,
+    }
+
+    vk.CmdSetViewport(cmd, 0, 1, &viewport)
+
+    scissor := vk.Rect2D {
+        offset = {x = 0, y = 0},
+        extent = {width = self.draw_extent.width, height = self.draw_extent.height},
+    }
+
+    vk.CmdSetScissor(cmd, 0, 1, &scissor)
+
+    // Draw the triangle
+    vk.CmdBindPipeline(cmd, .GRAPHICS, self.triangle_pipeline)
+
     // Launch a draw command to draw 3 vertices
     vk.CmdDraw(cmd, 3, 1, 0, 0)
 
-    // Other code above ---
-
+    // Draw rectangle
     vk.CmdBindPipeline(cmd, .GRAPHICS, self.mesh_pipeline)
 
     push_constants := GPU_Draw_Push_Constants {
-        world_matrix  = la.MATRIX4F32_IDENTITY, // import la "core:math/linalg"
+        world_matrix  = la.MATRIX4F32_IDENTITY,
         vertex_buffer = self.rectangle.vertex_buffer_address,
     }
 
@@ -831,8 +875,6 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
     vk.CmdBindIndexBuffer(cmd, self.rectangle.index_buffer.buffer, 0, .UINT32)
 
     vk.CmdDrawIndexed(cmd, 6, 1, 0, 0, 0)
-
-    // Other code bellow ---
 
     vk.CmdEndRendering(cmd)
 
@@ -852,6 +894,8 @@ Last, we use `vkCmdDrawIndexed` to draw 2 triangles (6 indices). This is the sam
 `vk.CmdDraw`, but it uses the currently bound index buffer to draw meshes.
 
 Thats all, we now have a generic way of rendering any mesh.
+
+![Mesh Buffers](./img/mesh_buffers.png)
 
 Next we will load mesh files from a **GLTF** in the most basic way so we can play around with
 fancier things than a rectangle.

@@ -16,7 +16,7 @@ using flat arrays and indices solves these issues.
 
 Here’s the original implementation we started before:
 
-```odin
+```odin title="drawing.odin"
 Renderable :: struct {
     draw: proc(self: ^Renderable, top_matrix: la.Matrix4f32, ctx: ^Draw_Context),
 }
@@ -140,7 +140,7 @@ From this point forward, any new code related to the scene graph should be added
 
 Let's start our refactored code with the `Hierarchy` component.
 
-```odin
+```odin title="scene.odin"
 // Hierarchy component for scene nodes
 Hierarchy :: struct {
     parent:       i32, // -1 means no parent
@@ -156,9 +156,9 @@ indices that are stored in contiguous arrays to represent relationships between 
 
 This new approach leverages the "**Left Child, Right Sibling**" representation, a clever way to
 flatten a multi-child tree into a binary-like structure without pointers. Each node’s
-`first_child` index points to its leftmost child, and `next_sibling` links to the next child of
-the same parent, forming a **linked list of siblings**. `last_sibling` tracks the end of this list
-for O(1) child appending, and `level` caches depth for quick hierarchy queries.
+`first_child` index points to its leftmost child, and `next_sibling` links to the next child
+of the same parent, forming a **linked list of siblings**. `last_sibling` tracks the end of
+this list for O(1) child appending, and `level` caches depth for quick hierarchy queries.
 
 ![Tree Representations](./img/tree_representations.png)
 
@@ -186,7 +186,7 @@ our purposes because we usually travel through all of the children or none of th
 
 Now, we can declare a new `Scene` structure with logical **components**:
 
-```odin
+```odin title="scene.odin"
 // Scene container to store all node data in arrays
 Scene :: struct {
     // Transform components
@@ -233,7 +233,7 @@ arrays.
 
 We also need a way to initialize and destroy scenes:
 
-```odin
+```odin title="drawing.odin"
 // Initialize a new scene.
 scene_init :: proc(scene: ^Scene, allocator := context.allocator) {
     context.allocator = allocator
@@ -272,7 +272,7 @@ resources.
 Next, we'll implement the `scene_add_node` procedure, which handles the insertion of new nodes
 into the scene's hierarchical structure.
 
-```odin
+```odin title="drawing.odin"
 // Add a new node to the scene
 scene_add_node :: proc(scene: ^Scene, #any_int parent, level: i32) -> i32 {
     // Create new node ID
@@ -492,7 +492,7 @@ Let's break down the code:
 Building upon the `scene_add_node` procedure, we can now implement the `scene_add_mesh_node`
 procedure.
 
-```odin
+```odin title="scene.odin"
 // Add a mesh node to the scene.
 scene_add_mesh_node :: proc(
     scene: ^Scene,
@@ -527,7 +527,7 @@ computes the node’s level based on its parent’s depth.
 The `append_and_get_idx` helper procedure simplifies appending elements to dynamic arrays by
 returning the index of the newly added element. Add the following code to `core.odin`:
 
-```odin
+```odin title="scene.odin"
 // Appends an element to a dynamic array and returns its index.
 append_and_get_idx :: #force_inline proc(array: ^$T/[dynamic]$E, arg: E) -> u32 {
     append(array, arg)
@@ -548,7 +548,7 @@ We also have `append_and_get_ref` that can be useful later.
 Like in the previous implementation, the world transform needs to be updated, so whenever the
 local transform gets changed, we need to update transforms.
 
-```odin
+```odin title="scene.odin"
 // Update all world transforms starting from a specific node.
 update_transforms :: proc(scene: ^Scene, #any_int node_index: i32) {
     node := scene.hierarchy[node_index]
@@ -587,11 +587,11 @@ update_all_transforms :: proc(scene: ^Scene) {
 ```
 
 The `update_transforms` procedure recalculates the world transformation of a specified node and
-its descendants. Given a `Scene` and a `node_index`, it combines the node’s local transform with
-its parent’s world transform (or uses the local transform alone for root nodes) and updates the
-`world_transforms` array accordingly. It then recursively applies this process to all child
-nodes, ensuring that the entire subtree reflects the correct spatial positioning based on the
-hierarchy.
+its descendants. Given a `Scene` and a `node_index`, it combines the node’s local transform
+with its parent’s world transform (or uses the local transform alone for root nodes) and
+updates the `world_transforms` array accordingly. It then recursively applies this process to
+all child nodes, ensuring that the entire subtree reflects the correct spatial positioning
+based on the hierarchy.
 
 To update the entire scene, the `update_all_transforms` procedure iterates over all nodes to
 identify those without parents (root nodes) and invokes `update_transforms` on each.
@@ -614,7 +614,7 @@ every frame (or cached), and execute a single vulkan draw function for each.
 
 Knowing this, the `scene_draw_node` procedure looks like this:
 
-```odin
+```odin title="scene.odin"
 // Draw a specific node and its children.
 scene_draw_node :: proc(scene: ^Scene, #any_int node_index: i32, ctx: ^Draw_Context) {
     // Combine top matrix with node's world transform
@@ -675,18 +675,20 @@ meshes are correctly integrated into the new `Scene` structure.
 
 On the `Geo_Surface`, replace the `material` field with `material_index`:
 
-```odin
+```odin title="loader.odin"
 Geo_Surface :: struct {
     start_index:    u32,
     count:          u32,
-    // highlight-next-line
+    // diff-remove
+    material:       Material,
+    // diff-add
     material_index: u32, // Index into the scene's materials array
 }
 ```
 
 Next, change `Mesh_Asset_List` definition to store a simple `Mesh_Asset`, not a pointer:
 
-```odin
+```odin title="loader.odin"
 // Mesh_Asset_List :: [dynamic]^Mesh_Asset
 // highlight-next-line
 Mesh_Asset_List :: [dynamic]Mesh_Asset
@@ -703,31 +705,18 @@ things down because the computer needs to follow each pointer to find the actual
 
 Also change the signature of `load_gltf_meshes` to accept a `meshes` out parameter:
 
-Before:
-
-```odin
+```odin title="loader.odin"
 load_gltf_meshes :: proc(
     engine: ^Engine,
     file_path: string,
-    allocator := context.allocator,
-) -> (
-    meshes: Mesh_Asset_List,
-    ok: bool,
-) {
-```
-
-After:
-
-```odin
-load_gltf_meshes :: proc(
-    engine: ^Engine,
-    file_path: string,
-    // highlight-next-line
+    // diff-add
     meshes: ^Mesh_Asset_List,
+    // diff-add
+    allocator := context.allocator,
     loc := #caller_location,
 ) -> (
-    // highlight-next-line
-    // meshes: Mesh_Asset_List, // Remove this return value
+    // diff-remove
+    meshes: Mesh_Asset_List,
     ok: bool,
 ) {
 ```
@@ -738,64 +727,92 @@ debugging by providing contextual information for assertions.
 
 At the beginning of the `load_gltf_meshes`, make sure `meshes` is valid:
 
-```odin
-log.debugf("Loading GLTF: %s", file_path)
+```odin title="loader.odin"
+// Loads 3D mesh data from a glTF file and upload to the GPU.
+load_gltf_meshes :: proc(
+    engine: ^Engine,
+    file_path: string,
+    meshes: ^Mesh_Asset_List,
+    allocator := context.allocator,
+    loc := #caller_location,
+) -> (
+    ok: bool,
+) {
+    log.debugf("Loading GLTF: %s", file_path)
 
-// highlight-next-line
-ensure(meshes != nil, "Invalid meshes", loc)
+    // diff-add
+    ensure(meshes != nil, "Invalid meshes", loc)
 
-// Configure cgltf parsing options
-// Using .invalid type lets cgltf automatically detect if it's .gltf or .glb
-options := cgltf.options {
-    type = .invalid,
-}
+    // Configure cgltf parsing options
+    // Using .invalid type lets cgltf automatically detect if it's .gltf or .glb
+    options := cgltf.options {
+        type = .invalid,
+    }
+
+    // ...
 ```
 
 Next, remove the `meshes` initialization, this is now done by the caller:
 
-```odin
+```odin title="loader.odin"
+// Temporary arrays for indices and vertices
+indices_temp: [dynamic]u32;indices_temp.allocator = ta
+vertices_temp: [dynamic]Vertex;vertices_temp.allocator = ta
+
+// diff-remove-start
 // Initialize the output mesh list
 meshes = make(Mesh_Asset_List, allocator)
 defer if !ok {
     destroy_mesh_assets(&meshes, allocator)
 }
+// diff-remove-end
+
+// Process each mesh in the glTF file
+for &mesh in data.meshes {
+    // Allocate new mesh asset
 ```
 
 Inside the main `for` loop, we now work directly with mesh data stored in the `meshes` array
 rather than allocating pointers:
 
-```odin
+```odin title="loader.odin"
 // Process each mesh in the glTF file
 for &mesh in data.meshes {
+    // diff-remove-start
+    // Allocate new mesh asset
+    new_mesh := new(Mesh_Asset, allocator)
+    // diff-remove-end
+    // diff-add-start
     // Add a new empty mesh to our collection and get a reference to it
     // Instead of allocating a pointer, we work with the actual Mesh_Asset structure
-    // highlight-next-line
     new_mesh := append_and_get_ref(meshes, Mesh_Asset{})
+    // diff-add-end
 ```
 
 At the end of the procedure, remove the `append(meshes, new_mesh)` and change the return value:
 
-```odin
+```odin title="loader.odin"
         // Upload mesh data to GPU
         new_mesh.mesh_buffers = upload_mesh(engine, indices_temp[:], vertices_temp[:]) or_return
 
-        // Remove this line
-        // highlight-next-line
-        // append(meshes, new_mesh)
+        // diff-remove
+        append(meshes, new_mesh)
     }
 
     if len(meshes) == 0 {
         return
     }
 
-    // highlight-next-line
+    // diff-remove
+    return true, meshes
+    // diff-add
     return true
 }
 ```
 
 To finish, let's also modify the procedure used to destroy the mesh assets:
 
-```odin
+```odin title="loader.odin"
 // Destroys a single `Mesh_Asset` and frees all its resources.
 destroy_mesh_asset :: proc(mesh: ^Mesh_Asset, allocator := context.allocator) {
     context.allocator = allocator
@@ -817,21 +834,22 @@ Meshes and materials are now stored in the `Scene`, that means you can remove `t
 `Engine`. Also replace `loaded_nodes: map[string]^Node` with `name_for_node: map[string]u32`.
 Next, add the `Scene` field.
 
-```odin
+```odin title="engine.odin"
 Engine :: struct {
     // Scene
-    main_draw_context: Draw_Context,
-    // highlight-start
-    name_for_node:     map[string]u32,
-    scene:             Scene,
-    // highlight-end
-    scene_data:        GPU_Scene_Data,
+    gpu_scene_data_descriptor_layout: vk.DescriptorSetLayout,
+    main_draw_context:                Draw_Context,
+    // diff-add-start
+    name_for_node:                    map[string]u32,
+    scene:                            Scene,
+    // diff-add-end
+    scene_data:                       GPU_Scene_Data,
 }
 ```
 
 This is the new `engine_update_scene`:
 
-```odin
+```odin title="engine.odin"
 // Updates the scene state and prepares render objects.
 engine_update_scene :: proc(self: ^Engine) {
     // Clear previous render objects
@@ -870,7 +888,7 @@ will now be handled within `init.odin`.
 At the beginning of `engine_init_default_data`, initialize the engine scene and change the way
 we use `load_gltf_meshes` to reflect our previous refactor:
 
-```odin
+```odin title="init.odin"
 engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
     // Initialize the scene
     scene_init(&self.scene)
@@ -884,7 +902,7 @@ engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
 Now, at the end of `engine_init_default_data`, replace the code that uses `test_meshes` with
 this new implementation:
 
-```odin
+```odin title="init.odin"
     // Add default material to the materials array
     default_material_idx := append_and_get_idx(&self.scene.materials, self.default_material_data)
 
@@ -921,7 +939,7 @@ steps.
 For the initial transformations and duplicated cubes, add this after the `for` that process
 each mesh:
 
-```odin
+```odin title="init.odin"
 // Find and update Suzanne node
 if suzanne_node, suzanne_ok := self.name_for_node["Suzanne"]; suzanne_ok {
     self.scene.local_transforms[suzanne_node] = la.MATRIX4F32_IDENTITY
@@ -961,7 +979,7 @@ the parent, this will create a hierarchy of cubes where each copy is a child of 
 
 To finish, you need to change how to cleanup the scene:
 
-```odin title="From 'engine_cleanup' procedure"
+```odin title="engine.odin"
 // Clean up scene nodes
 for &mesh in self.scene.meshes {
     destroy_buffer(mesh.mesh_buffers.index_buffer)
@@ -978,7 +996,7 @@ delete(self.name_for_node)
 Within `engine_draw_geometry`, simply change the source of the material data. Note that
 `draw.material` now represents an ID rather than the material itself.
 
-```odin title="engine_draw_geometry"
+```odin title="drawing.odin"
 // Draw all opaque surfaces
 for &draw in self.main_draw_context.opaque_surfaces {
     // highlight-next-line

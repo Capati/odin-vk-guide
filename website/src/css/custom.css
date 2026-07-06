@@ -15,6 +15,8 @@
 	--ifm-color-primary-lightest: #5390d5;
 	--ifm-code-font-size: 95%;
 	--docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+    --iaindavisdev-diff-insertion: #b0f6ac;
+    --iaindavisdev-diff-deletion: #fcc8c0;
 }
 
 /* For readability concerns, you should choose a lighter palette in dark mode. */
@@ -27,6 +29,8 @@
 	--ifm-color-primary-lighter: #689ada;
 	--ifm-color-primary-lightest: #88afe3;
 	--docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+    --iaindavisdev-diff-insertion: #254323;
+    --iaindavisdev-diff-deletion: #432723;
 }
 
 .navbar {
@@ -35,4 +39,44 @@
 
 .footer {
 	background-color: #242F3F !important;
+}
+
+.code-block-diff-add-line {
+  position: relative;
+  background-color: var(--iaindavisdev-diff-insertion);
+  display: block;
+  margin: 0 -40px;
+  padding: 0 40px;
+}
+
+.code-block-diff-add-line::before {
+  position: absolute;
+  left: 8px;
+  content: '+';
+}
+
+.code-block-diff-remove-line {
+  position: relative;
+  background-color: var(--iaindavisdev-diff-deletion);
+  display: block;
+  margin: 0 -40px;
+  padding: 0 40px;
+}
+
+.code-block-diff-remove-line::before {
+  position: absolute;
+  left: 8px;
+  content: '-';
+}
+
+pre code:has(.code-block-diff-add-line),
+pre code:has(.code-block-diff-remove-line) {
+  padding-left: 40px !important;
+  padding-right: 40px !important;
+}
+
+pre code:has(.code-block-diff-add-line) .theme-code-block-highlighted-line,
+pre code:has(.code-block-diff-remove-line) .theme-code-block-highlighted-line {
+  margin: 0 -40px;
+  padding: 0 40px;
 }

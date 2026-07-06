@@ -7,9 +7,9 @@ sidebar_label: "Mesh Loading"
 
 We will do proper scene loading later, but until we go there, we need something better than a
 rectangle as a mesh. For that, we will begin to load **GLTF** files but in a very simplified
-and wrong way, getting only the geometry data and ignoring everything else. To accomplish this,
-we are using the `cgltf` library provided through the vendor package, which offers a lightweight
-solution for parsing GLTF files.
+and wrong way, getting only the geometry data and ignoring everything else. To accomplish
+this, we are using the `cgltf` library provided through the vendor package, which offers a
+lightweight solution for parsing GLTF files.
 
 There is a **glTF** file that came with the starting-point repository, called `basicmesh.glb`.
 That one has a cube, a sphere, and a monkey head meshes centered in the origin. Being a file as
@@ -75,7 +75,7 @@ drawcall as we will be appending all the vertex data of each surface into the sa
 
 Now, implement the mesh loading procedure using `cgltf`:
 
-```odin
+```odin title="loader.odin"
 // Loads 3D mesh data from a glTF file and upload to the GPU.
 load_gltf_meshes :: proc(
     engine: ^Engine,
@@ -423,19 +423,37 @@ vertex normals which is useful for debugging.
 The position array is going to be there always, so we use that to initialize the `Vertex`
 structures. For all the other attributes we need to do it checking that the data exists.
 
-Lets draw them.
+Lets draw them. We begin by adding them to the `Engine` structure:
 
-```odin
-test_meshes: Mesh_Asset_List,
+```odin title="engine.odin"
+Engine :: struct {
+    // Rendering resources
+    // ..
+    mesh_pipeline:             vk.Pipeline,
+    rectangle:                 GPU_Mesh_Buffers,
+    // diff-add
+    test_meshes:               Mesh_Asset_List,
+}
 ```
 
-We begin by adding them to the `Engine` structure. Lets load them from
-`engine_init_default_data()`.
+Lets load them from `engine_init_default_data()`.
 
-```odin
-self.test_meshes = load_gltf_meshes(self, "assets/basicmesh.glb") or_return
-defer if !ok {
-    destroy_mesh_assets(&self.test_meshes)
+```odin title="engine.odin"
+engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
+    // ...
+
+    // Delete the rectangle data on engine shutdown
+    deletion_queue_push(&self.main_deletion_queue, self.rectangle.index_buffer)
+    deletion_queue_push(&self.main_deletion_queue, self.rectangle.vertex_buffer)
+
+    // highlight-start
+    self.test_meshes = load_gltf_meshes(self, "assets/basicmesh.glb") or_return
+    defer if !ok {
+        destroy_mesh_assets(&self.test_meshes)
+    }
+    // highlight-end
+
+    return true
 }
 ```
 
@@ -443,30 +461,40 @@ In the file provided, index `0` is a **cube**, index `1` is a **sphere**, and in
 blender **monkeyhead**. we will be drawing that last one, draw it right after drawing the
 rectangle from before.
 
-```odin
-push_constants = GPU_Draw_Push_Constants {
-    world_matrix  = la.MATRIX4F32_IDENTITY,
-    vertex_buffer = self.test_meshes[2].mesh_buffers.vertex_buffer_address,
+```odin title="engine.odin"
+engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool) {
+    // ...
+
+    // Draw monkey (using the same mesh pipeline already bound)
+    push_constants = GPU_Draw_Push_Constants {
+        world_matrix  = la.MATRIX4F32_IDENTITY,
+        vertex_buffer = self.test_meshes[2].mesh_buffers.vertex_buffer_address,
+    }
+
+    vk.CmdPushConstants(
+        cmd,
+        self.mesh_pipeline_layout,
+        {.VERTEX},
+        0,
+        size_of(GPU_Draw_Push_Constants),
+        &push_constants,
+    )
+    vk.CmdBindIndexBuffer(
+        cmd, self.test_meshes[2].mesh_buffers.index_buffer.buffer, 0, .UINT32)
+
+    vk.CmdDrawIndexed(
+        cmd,
+        self.test_meshes[2].surfaces[0].count,
+        1,
+        self.test_meshes[2].surfaces[0].start_index,
+        0,
+        0,
+    )
+
+    vk.CmdEndRendering(cmd)
+
+    return true
 }
-
-vk.CmdPushConstants(
-    cmd,
-    self.mesh_pipeline_layout,
-    {.VERTEX},
-    0,
-    size_of(GPU_Draw_Push_Constants),
-    &push_constants,
-)
-vk.CmdBindIndexBuffer(cmd, self.test_meshes[2].mesh_buffers.index_buffer.buffer, 0, .UINT32)
-
-vk.CmdDrawIndexed(
-    cmd,
-    self.test_meshes[2].surfaces[0].count,
-    1,
-    self.test_meshes[2].surfaces[0].start_index,
-    0,
-    0,
-)
 ```
 
 You will see that the monkey head has colors. That because we have `OVERRIDE_VERTEX_COLORS` set
@@ -481,11 +509,9 @@ height, which is supported and will flip the entire rendering, this would make i
 **DirectX**. On the other side, we can apply a flip that changes the objects as part of our
 projection matrix. We will be doing that.
 
-From the render code, lets give it a better matrix for rendering. Add this code right before
-the push constants call that draws the mesh on `engine_draw_geometry().`
+From the render code, lets give it a better matrix for rendering.
 
-First, create a file called `math.odin` that will contain some code that are not implemented in
-any Odin package.
+First, create a file called `math.odin` that will contain some math abstractions.
 
 ```odin title="math.odin"
 package vk_guide
@@ -523,6 +549,9 @@ matrix4_perspective_reverse_z_f32 :: proc "contextless" (
 The `matrix4_perspective_reverse_z_f32` procedure generates a 4x4 perspective projection matrix
 with a reverse-Z configuration.
 
+Now add the following code right before the push constants call that draws the monkey on
+`engine_draw_geometry().`
+
 ```odin title="engine.odin"
 // Create view matrix - place camera at positive Z looking at origin
 view := la.matrix4_translate_f32({0, 0, -5})
@@ -535,10 +564,11 @@ projection := matrix4_perspective_reverse_z_f32(
     true, // Invert the Y direction to match OpenGL and glTF axis conventions
 )
 
-// Other code bellow ---
-
-// Monkey - ensure matrix order matches shader expectations
-push_constants := GPU_Draw_Push_Constants {
+// Draw monkey (using the same mesh pipeline already bound)
+push_constants = GPU_Draw_Push_Constants {
+    // diff-remove
+    world_matrix  = la.MATRIX4F32_IDENTITY,
+    // diff-add
     world_matrix  = projection * view,
     vertex_buffer = self.test_meshes[2].mesh_buffers.vertex_buffer_address,
 }
@@ -558,19 +588,27 @@ If you run the engine at this point, you will find that the monkey head is drawi
 glitched. We havent setup depth testing, so triangles of the back side of the head can render
 on top of the front, creating a wrong image. Lets go and implement depth testing.
 
-Begin by adding a new image into the `Engine` structure, by the side of the draw-image as they
-will be paired together while rendering.
+Begin by adding a new image into the `Engine` structure, by the side of the `draw_image` as
+they will be paired together while rendering.
 
-```odin
-draw_image: Allocated_Image,
-depth_image: Allocated_Image,
+```odin title="engine.odin"
+Engine :: struct {
+    // Rendering resources
+    draw_image:               Allocated_Image,
+    // diff-add
+    depth_image:              Allocated_Image,
+    draw_extent:              vk.Extent2D,
+    gradient_pipeline_layout: vk.PipelineLayout,
+    background_effects:       [Compute_Effect_Kind]Compute_Effect,
+    // ...
+}
 ```
 
 Now we will initialize it alongside the `draw_image`, in the `engine_init_swapchain` procedure.
 
-```odin
+```odin title="engine.odin"
 engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
-    // Other code above ---
+    // ...
 
     self.depth_image.image_format = .D32_SFLOAT
     self.depth_image.image_extent = draw_image_extent
@@ -587,7 +625,7 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
 
     // Allocate and create the image
     vk_check(
-        vma.create_image(
+        vma.CreateImage(
             self.vma_allocator,
             dimg_info,
             rimg_allocinfo,
@@ -597,7 +635,7 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
         ),
     ) or_return
     defer if !ok {
-        vma.destroy_image(self.vma_allocator, self.depth_image.image, nil)
+        vma.DestroyImage(self.vma_allocator, self.depth_image.image, nil)
     }
 
     // Build a image-view for the draw image to use for rendering
@@ -630,31 +668,49 @@ From the draw loop, we will transition the depth image from undefined into depth
 mode, In the same way we do with the draw image. This goes right before the
 `engine_draw_geometry()` call.
 
-```odin
+```odin title="engine.odin"
+// Clear the image
+engine_draw_background(self, cmd) or_return
 transition_image(cmd, self.draw_image.image, .GENERAL, .COLOR_ATTACHMENT_OPTIMAL)
-// Other code above ---
-transition_image(cmd, self.depth_image.image, .UNDEFINED, .DEPTH_ATTACHMENT_OPTIMAL) // < here
+
+// diff-add
+transition_image(cmd, self.depth_image.image, .UNDEFINED, .DEPTH_ATTACHMENT_OPTIMAL)
+
+// Draw geometry
+engine_draw_geometry(self, cmd) or_return
 ```
 
 Now we need to change the render pass begin info to use this depth attachment and clear it
 correctly. Change this at the top of `engine_draw_geometry()`
 
-```odin
-color_attachment := attachment_info(self.draw_image.image_view, nil, .COLOR_ATTACHMENT_OPTIMAL)
-// Other code above ---
-depth_attachment := depth_attachment_info(
-    self.depth_image.image_view,
-    .DEPTH_ATTACHMENT_OPTIMAL,
-)
+```odin title="engine.odin"
+engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool) {
+    // Begin a render pass connected to our draw image
+    color_attachment := attachment_info(
+        self.draw_image.image_view, nil, .COLOR_ATTACHMENT_OPTIMAL)
 
-render_info := rendering_info(self.draw_extent, &color_attachment, &depth_attachment)
+    // diff-add-start
+    depth_attachment := depth_attachment_info(
+        self.depth_image.image_view,
+        .DEPTH_ATTACHMENT_OPTIMAL,
+    )
+    // diff-add-end
+
+    // diff-remove
+    render_info := rendering_info(self.draw_extent, &color_attachment, nil)
+    // diff-add
+    render_info := rendering_info(self.draw_extent, &color_attachment, &depth_attachment)
+    vk.CmdBeginRendering(cmd, &render_info)
+
+    // ...
+}
 ```
 
 We already left space for the depth attachment on the `rendering_info`, but we also do need to
 set up the depth clear to its correct value. Lets look at the implementation of the
 `depth_attachment_info`.
 
-```odin
+```odin title="initializers.odin"
 depth_attachment_info :: proc(
     view: vk.ImageView,
     layout: vk.ImageLayout = .COLOR_ATTACHMENT_OPTIMAL,
@@ -677,9 +733,9 @@ the depth value on the clear structure to `0.0f`. As explained above, we are goi
 
 The last thing is to enable depth testing as part of the pipeline. We made the depth option
 when the pipeline builder was made, but left it disabled. Lets fill that now. Add this
-procedure to PipelineBuilder.
+procedure to `Pipeline_Builder`.
 
-```odin
+```odin title="pipelines.odin"
 pipeline_builder_enable_depth_test :: proc(
     self: ^Pipeline_Builder,
     depth_write_enable: bool,
@@ -703,12 +759,21 @@ OP into the structure.
 Now time to use it from the place where we build the pipelines. Change this part on
 `engine_init_mesh_pipeline`.
 
-```odin
-// pipeline_builder_disable_depth_test(&builder)
+```odin title="engine.odin"
+// diff-remove-start
+// No depth testing
+pipeline_builder_disable_depth_test(&builder)
+// diff-remove-end
+// diff-add-start
+// Enable depth testing
 pipeline_builder_enable_depth_test(&builder, true, .GREATER_OR_EQUAL)
+// diff-add-end
 
 // Connect the image format we will draw into, from draw image
 pipeline_builder_set_color_attachment_format(&builder, self.draw_image.image_format)
+// diff-remove
+pipeline_builder_set_depth_attachment_format(&builder, .UNDEFINED)
+// diff-add
 pipeline_builder_set_depth_attachment_format(&builder, self.depth_image.image_format)
 ```
 
@@ -728,14 +793,28 @@ they neither write or read from the depth attachment.
 We need to add cleanup code for the new meshes we are creating, so we will destroy the buffers
 of the mesh array in the cleanup procedure, before the main deletion queue flush.
 
-```odin
-for &mesh in self.test_meshes {
-    destroy_buffer(mesh.mesh_buffers.index_buffer)
-    destroy_buffer(mesh.mesh_buffers.vertex_buffer)
-}
-destroy_mesh_assets(&self.test_meshes)
+```odin title="engine.odin"
+// Shuts down the engine.
+engine_cleanup :: proc(self: ^Engine) {
+    // ...
 
-deletion_queue_destroy(&self.main_deletion_queue)
+    for &frame in self.frames {
+        // ...
+    }
+
+    // highlight-start
+    for &mesh in self.test_meshes {
+        destroy_buffer(mesh.mesh_buffers.index_buffer)
+        destroy_buffer(mesh.mesh_buffers.vertex_buffer)
+    }
+    destroy_mesh_assets(&self.test_meshes)
+    // highlight-end
+
+    // ...
+
+    // Flush and destroy the global deletion queue
+    deletion_queue_destroy(&self.main_deletion_queue)
+}
 ```
 
 Before continuing, remove the code with the rectangle mesh and the triangle in the background.
@@ -745,5 +824,7 @@ the creation of the rectangle mesh on `engine_init_default_data` plus its usages
 `vk.CmdBindPipeline(cmd, .GRAPHICS, self.mesh_pipeline)`, as the call to binding the triangle
 pipeline is now gone and those `vk.CmdSetViewport` and `vk.CmdSetScissor` calls need to be done
 with a pipeline bound.
+
+![Mesh Loading](./img/mesh_loading.png)
 
 Next, we will setup transparent objects and blending.

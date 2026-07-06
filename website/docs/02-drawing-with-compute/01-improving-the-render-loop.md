@@ -155,13 +155,13 @@ deletion_queue_flush :: proc(self: ^Deletion_Queue) {
 
         // Memory allocator
         case vma.Allocator:
-            vma.destroy_allocator(res)
+            vma.DestroyAllocator(res)
         }
     }
 
     // Clear the array after processing all resources
     clear(&self.resources)
-
+}
 ```
 
 The code defines a `Deletion_Queue` struct that tracks Vulkan resources that need to be
@@ -192,13 +192,27 @@ Add it into `Engine` struct, and inside the `Frame_Data` struct.
 
 ```odin
 Frame_Data :: struct {
-     // Other data ---
-    deletion_queue: Deletion_Queue,
+    command_pool:        vk.CommandPool,
+    main_command_buffer: vk.CommandBuffer,
+    swapchain_semaphore: vk.Semaphore,
+    render_fence:        vk.Fence,
+    // highlight-next-line
+    deletion_queue:      Deletion_Queue,
 }
 
 Engine :: struct {
-     // Other data ---
-    main_deletion_queue: Deletion_Queue,
+    // ...
+
+    // Frame resources
+    frames:                     [FRAME_OVERLAP]Frame_Data,
+    frame_number:               int,
+    graphics_queue:             vk.Queue,
+    graphics_queue_family:      u32,
+
+    // highlight-start
+    // Memory management
+    main_deletion_queue:          Deletion_Queue,
+    // highlight-end
 }
 ```
 
@@ -244,6 +258,7 @@ engine_draw :: proc(self: ^Engine) -> (ok: bool) {
     // Wait until the gpu has finished rendering the last frame. Timeout of 1 second
     vk_check(vk.WaitForFences(self.vk_device, 1, &frame.render_fence, true, 1e9)) or_return
 
+    // highlight-next-line
     deletion_queue_flush(&frame.deletion_queue)
 
     // Other code ---
@@ -266,12 +281,16 @@ engine_cleanup :: proc(self: ^Engine) {
         vk.DestroyFence(self.vk_device, frame.render_fence, nil)
         vk.DestroySemaphore(self.vk_device, frame.swapchain_semaphore, nil)
 
+        // highlight-start
         // Flush and destroy the peer frame deletion queue
         deletion_queue_destroy(&frame.deletion_queue)
+        // highlight-end
     }
 
+    // highlight-start
     // Flush and destroy the global deletion queue
     deletion_queue_destroy(&self.main_deletion_queue)
+    // highlight-end
 
     // Rest of cleanup procedure
 }
@@ -306,40 +325,51 @@ Check the [Project Setup](/project-setup/building-project) and the
 
 :::
 
-Start by adding the allocator to the `Engine` structure.
+Start by adding the allocator to the `Engine` structure, first import the `vma` lib.
 
-```odin title="Import the 'libs:vma' package at the top"
-// Libraries
+```odin title="engine.odin - Import the 'libs:vma' package at the top"
+// Local packages
+import "libs:vkb"
+// highlight-next-line
 import "libs:vma"
 ```
 
-```odin
+```odin title="engine.odin"
 Engine :: struct {
-    vma_allocator: vma.Allocator,
+    //...
+
+    // Memory management
+    // highlight-next-line
+    vma_allocator:       vma.Allocator,
+    main_deletion_queue: Deletion_Queue,
 }
 ```
 
 Now we will initialize it from `engine_init_vulkan()` call, at the end of the procedure.
 
-```odin
+```odin title="engine.odin"
 engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
     // Other code ---
 
     // Initializes a subset of Vulkan functions required by VMA
     vma_vulkan_functions := vma.create_vulkan_functions()
 
-    allocator_create_info: vma.Allocator_Create_Info = {
-        flags            = {.Buffer_Device_Address},
+    api_version := min(
+        self.vkb.instance.api_version,
+        self.vkb.physical_device.vk_properties.apiVersion,
+    )
+
+    vma_create_info: vma.AllocatorCreateInfo = {
+        flags            = { .BUFFER_DEVICE_ADDRESS },
         instance         = self.vk_instance,
-        physical_device  = self.vk_physical_device,
+        physicalDevice   = self.vk_physical_device,
         device           = self.vk_device,
-        vulkan_functions = &vma_vulkan_functions,
+        pVulkanFunctions = &vma_vulkan_functions,
+        vulkanApiVersion = api_version,
     }
 
-    vk_check(
-        vma.create_allocator(allocator_create_info, &self.vma_allocator),
-        "Failed to Create Vulkan Memory Allocator",
-    ) or_return
+    // Create the VMA (Vulkan Memory Allocator)
+    vk_check(vma.CreateAllocator(vma_create_info, &self.vma_allocator)) or_return
 
     deletion_queue_push(&self.main_deletion_queue, self.vma_allocator)
 
@@ -350,7 +380,7 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
 There isn't much to explain it, we are initializing the `vma_allocator` field, and then adding
 its destruction procedure into the destruction queue so that it gets cleared when the engine
 exits. We hook the physical device, instance, and device to the creation procedure. We give the
-flag `.Buffer_Device_Address` that will let us use GPU pointers later when we need them. Vulkan
+flag `.BUFFER_DEVICE_ADDRESS` that will let us use GPU pointers later when we need them. Vulkan
 Memory Allocator library follows similar call conventions as the vulkan api, so it works with
 similar info structs.
 
@@ -403,6 +433,9 @@ last, the image size and its format, which will be useful when dealing with the 
 store the device and VMA allocator for use on cleanup later.
 
 ```odin title="core.odin"
+// Local packages
+import "libs:vma"
+
 Allocated_Image :: struct {
     device:       vk.Device,
     image:        vk.Image,
@@ -415,7 +448,7 @@ Allocated_Image :: struct {
 
 destroy_image :: proc(self: Allocated_Image) {
     vk.DestroyImageView(self.device, self.image_view, nil)
-    vma.destroy_image(self.allocator, self.image, self.allocation)
+    vma.DestroyImage(self.allocator, self.image, self.allocation)
 }
 ```
 
@@ -424,7 +457,9 @@ the `draw_extent` field to specify the size of the rendered image.
 
 ```odin title="engine.odin"
 Engine :: struct {
-    // Draw resources
+    // ...
+
+    // Rendering resources
     draw_image:  Allocated_Image,
     draw_extent: vk.Extent2D,
 }
@@ -490,6 +525,8 @@ Resource :: union {
 deletion_queue_flush :: proc(self: ^Deletion_Queue) {
     #reverse for &resource in self.resources {
         switch &res in resource {
+        // other case...
+
         // Higher-level custom resources
         case Allocated_Image:
             destroy_image(res)
@@ -531,24 +568,22 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
     )
 
     // For the draw image, we want to allocate it from gpu local memory
-    rimg_allocinfo := vma.Allocation_Create_Info {
-        usage          = .Gpu_Only,
-        required_flags = {.DEVICE_LOCAL},
+    rimg_allocinfo := vma.AllocationCreateInfo {
+        usage         = .GPU_ONLY,
+        requiredFlags = {.DEVICE_LOCAL},
     }
 
     // Allocate and create the image
-    vk_check(
-        vma.create_image(
-            self.vma_allocator,
-            rimg_info,
-            rimg_allocinfo,
-            &self.draw_image.image,
-            &self.draw_image.allocation,
-            nil,
-        ),
-    ) or_return
+    vk_check(vma.CreateImage(
+        self.vma_allocator,
+        rimg_info,
+        rimg_allocinfo,
+        &self.draw_image.image,
+        &self.draw_image.allocation,
+        nil,
+    )) or_return
     defer if !ok {
-        vma.destroy_image(self.vma_allocator, self.draw_image.image, nil)
+        vma.DestroyImage(self.vma_allocator, self.draw_image.image, nil)
     }
 
     // Build a image-view for the draw image to use for rendering
@@ -558,9 +593,8 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
         {.COLOR},
     )
 
-    vk_check(
-        vk.CreateImageView(self.vk_device, &rview_info, nil, &self.draw_image.image_view),
-    ) or_return
+    vk_check(vk.CreateImageView(
+        self.vk_device, &rview_info, nil, &self.draw_image.image_view)) or_return
     defer if !ok {
         vk.DestroyImageView(self.vk_device, self.draw_image.image_view, nil)
     }
@@ -573,9 +607,9 @@ engine_init_swapchain :: proc(self: ^Engine) -> (ok: bool) {
 ```
 
 We begin by creating a `vk.Extent3D` structure with the size of the image we want, which will
-match our window size. We copy it into the AllocatedImage.
+match our window size. We copy it into the `Allocated_Image`.
 
-Then, we need to fill our usage flags. In vulkan, all images and buffers must fill a UsageFlags
+Then, we need to fill our usage flags. In Vulkan, all images and buffers must fill a UsageFlags
 with what they will be used for. This allows the driver to perform optimizations in the
 background depending on what that buffer or image is going to do later. In our case, we want
 `TRANSFER_SRC` and `TRANSFER_DST` so that we can copy from and into the image,  Storage because
@@ -587,13 +621,13 @@ channels, and will use 64 bits per pixel. Thats a fair amount of data, 2x what a
 image uses, but its going to be useful.
 
 When creating the image itself, we need to send the image info and an alloc info to VMA. VMA
-will do the vulkan create calls for us and directly give us the vulkan image. The interesting
-thing in here is Usage and the required memory flags. With `.Gpu_Only` usage, we are letting
+will do the Vulkan create calls for us and directly give us the vulkan image. The interesting
+thing in here is Usage and the required memory flags. With `.GPU_ONLY` usage, we are letting
 VMA know that this is a gpu texture that wont ever be accessed from CPU, which lets it put it
 into gpu VRAM. To make extra sure of that, we are also setting `.DEVICE_LOCAL` as a memory
 flag. This is a flag that only gpu-side VRAM has, and guarantees the fastest access.
 
-In vulkan, there are multiple memory regions we can allocate images and buffers from. PC
+In Vulkan, there are multiple memory regions we can allocate images and buffers from. PC
 implementations with dedicated GPUs will generally have a cpu ram region, a GPU Vram region,
 and a "upload heap" which is a special region of gpu vram that allows cpu writes. If you have
 resizable bar enabled, the upload heap can be the entire gpu vram. Else it will be much
@@ -630,8 +664,16 @@ copy_image_to_image :: proc(
             {0, 0, 0},
             {x = i32(dst_size.width), y = i32(dst_size.height), z = 1},
         },
-        srcSubresource = {aspectMask = {.COLOR}, mipLevel = 0, baseArrayLayer = 0, layerCount = 1},
-        dstSubresource = {aspectMask = {.COLOR}, mipLevel = 0, baseArrayLayer = 0, layerCount = 1},
+        srcSubresource = {
+            aspectMask = {.COLOR},
+            mipLevel = 0, baseArrayLayer = 0,
+            layerCount = 1,
+        },
+        dstSubresource = {
+            aspectMask = {.COLOR},
+            mipLevel = 0, baseArrayLayer = 0,
+            layerCount = 1,
+        },
     }
 
     blit_info := vk.BlitImageInfo2 {
@@ -661,7 +703,9 @@ With it, we can now update the render loop. As draw() is getting too big, we are
 the syncronization, command buffer management, and transitions in the draw() procedure, but we
 are going to add the draw commands themselves into a `engine_draw_background()` procedure.
 
-```odin
+```odin title="engine.odin"
+// Draw background.
+@(require_results)
 engine_draw_background :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool) {
     // Make a clear-color from frame number. This will flash with a 120 frame period.
     flash := abs(math.sin(f32(self.frame_number) / 120.0))
@@ -673,15 +717,17 @@ engine_draw_background :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: boo
 
     // Clear image
     vk.CmdClearColorImage(cmd, self.draw_image.image, .GENERAL, &clear_value, 1, &clear_range)
+
+    return true
 }
 ```
-
-Add the procedure to the header too.
 
 We will be changing the code that records the command buffer. You can now delete the older one.
 The new code is this.
 
-```odin title="engine_draw"
+```odin title="engine.odin - engine_draw"
+// Other code, just after cmd_begin_info := ...
+
 self.draw_extent.width = self.draw_image.image_extent.width
 self.draw_extent.height = self.draw_image.image_extent.height
 
@@ -699,7 +745,7 @@ engine_draw_background(self, cmd) or_return
 transition_image(cmd, self.draw_image.image, .GENERAL, .TRANSFER_SRC_OPTIMAL)
 transition_image(
     cmd,
-    self.swapchain_images[frame.swapchain_image_index],
+    self.swapchain_images[swapchain_image_index],
     .UNDEFINED,
     .TRANSFER_DST_OPTIMAL,
 )
@@ -708,7 +754,7 @@ transition_image(
 copy_image_to_image(
     cmd,
     self.draw_image.image,
-    self.swapchain_images[frame.swapchain_image_index],
+    self.swapchain_images[swapchain_image_index],
     self.draw_extent,
     self.swapchain_extent,
 )
@@ -716,18 +762,15 @@ copy_image_to_image(
 // Set swapchain image layout to Attachment Optimal so we can draw it
 transition_image(
     cmd,
-    self.swapchain_images[frame.swapchain_image_index],
+    self.swapchain_images[swapchain_image_index],
     .TRANSFER_DST_OPTIMAL,
     .COLOR_ATTACHMENT_OPTIMAL,
 )
 
-// Draw imgui into the swapchain image
-engine_draw_imgui(self, cmd, self.swapchain_image_views[frame.swapchain_image_index])
-
 // Set swapchain image layout to Present so we can show it on the screen
 transition_image(
     cmd,
-    self.swapchain_images[frame.swapchain_image_index],
+    self.swapchain_images[swapchain_image_index],
     .COLOR_ATTACHMENT_OPTIMAL,
     .PRESENT_SRC_KHR,
 )

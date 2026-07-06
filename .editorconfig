@@ -2,7 +2,7 @@
 root = true
 
 [*]
-indent_style = tab
+indent_style = space
 indent_size = 4
 end_of_line = lf
 charset = utf-8
@@ -11,11 +11,9 @@ insert_final_newline = true
 
 [*.json]
 insert_final_newline = ignore
-indent_style = space
 
 [*.md]
 trim_trailing_whitespace = false
-indent_style = space
 indent_size = 2
 
 [*.bat]

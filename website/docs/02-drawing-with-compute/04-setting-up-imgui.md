@@ -18,18 +18,22 @@ Lets now go with the imgui initialization.
 
 We need to import some packages first at the top of `engine.odin` file.
 
-```odin
-// Libraries
+```odin title="engine.odin"
+// Local packages
+import "libs:vkb"
+import "libs:vma"
+// highlight-start
 import im "libs:imgui"
-import im_glfw "libs:imgui/imgui_impl_glfw"
-import im_vk "libs:imgui/imgui_impl_vulkan"
+import im_glfw "libs:imgui/backends/glfw"
+import im_vk "libs:imgui/backends/vulkan"
+// highlight-end
 ```
 
 Its the main imgui package, and then the implementation for the GLFW and the vulkan backends.
 
 Now to the initialization procedure.
 
-```odin
+```odin title="engine.odin"
 engine_init_imgui :: proc(self: ^Engine) -> (ok: bool) {
     im.CHECKVERSION()
 
@@ -61,33 +65,38 @@ engine_init_imgui :: proc(self: ^Engine) -> (ok: bool) {
     vk_check(vk.CreateDescriptorPool(self.vk_device, &pool_info, nil, &imgui_pool)) or_return
 
     // This initializes the core structures of imgui
-    im.create_context()
-    defer if !ok {im.destroy_context()}
+    im.CreateContext()
+    defer if !ok {im.DestroyContext()}
 
     // This initializes imgui for GLFW
-    im_glfw.init_for_vulkan(self.window, true) or_return
-    defer if !ok {im_glfw.shutdown()}
+    im_glfw.InitForVulkan(self.window, install_callbacks = true) or_return
+    defer if !ok {im_glfw.Shutdown()}
 
     // This initializes imgui for Vulkan
-    init_info := im_vk.Init_Info {
-        api_version = self.vkb.instance.api_version,
-        instance = self.vk_instance,
-        physical_device = self.vk_physical_device,
-        device = self.vk_device,
-        queue = self.graphics_queue,
-        descriptor_pool = imgui_pool,
-        min_image_count = 3,
-        image_count = 3,
-        use_dynamic_rendering = true,
-        pipeline_rendering_create_info = {
-            sType = .PIPELINE_RENDERING_CREATE_INFO,
-            colorAttachmentCount = 1,
+    pipeline_info := im_vk.PipelineInfo {
+        PipelineRenderingCreateInfo = {
+            sType                   = .PIPELINE_RENDERING_CREATE_INFO,
+            colorAttachmentCount    = 1,
             pColorAttachmentFormats = &self.swapchain_format,
         },
-        msaa_samples = ._1,
+        MSAASamples = {._1},
     }
 
-    im_vk.load_functions(
+    // This initializes imgui for Vulkan
+    init_info := im_vk.InitInfo {
+        ApiVersion          = self.vkb.instance.api_version,
+        Instance            = self.vk_instance,
+        PhysicalDevice      = self.vk_physical_device,
+        Device              = self.vk_device,
+        Queue               = self.graphics_queue,
+        DescriptorPool      = imgui_pool,
+        MinImageCount       = 3,
+        ImageCount          = 3,
+        UseDynamicRendering = true,
+        PipelineInfoMain    = pipeline_info,
+    }
+
+    im_vk.LoadFunctions(
         self.vkb.instance.api_version,
         proc "c" (function_name: cstring, user_data: rawptr) -> vk.ProcVoidFunction {
             engine := cast(^Engine)user_data
@@ -96,13 +105,13 @@ engine_init_imgui :: proc(self: ^Engine) -> (ok: bool) {
         self,
     ) or_return
 
-    im_vk.init(&init_info) or_return
-    defer if !ok {im_vk.shutdown()}
+    im_vk.Init(&init_info) or_return
+    defer if !ok {im_vk.Shutdown()}
 
     // Remember the LIFO queue, make sure the order of push is correct
     deletion_queue_push(&self.main_deletion_queue, imgui_pool)
-    deletion_queue_push(&self.main_deletion_queue, im_vk.shutdown)
-    deletion_queue_push(&self.main_deletion_queue, im_glfw.shutdown)
+    deletion_queue_push(&self.main_deletion_queue, im_vk.Shutdown)
+    deletion_queue_push(&self.main_deletion_queue, im_glfw.Shutdown)
 
     return true
 }
@@ -114,7 +123,7 @@ its own descriptor pool. The descriptor pool here is storing data for 1000 of a 
 different types of descriptors, so its a bit overkill. It wont be a problem, just slightly less
 efficient space-wise.
 
-We then call `im.create_context()` , `im_glfw.init_for_vulkan`, and `im_vk.init`. These
+We then call `im.CreateContext()` , `im_glfw.InitForVulkan`, and `im_vk.Init`. These
 procedures will initialize the different parts of imgui we need. On the vulkan one, we need to
 hook a few things, like our device, instance, queue.
 
@@ -126,7 +135,7 @@ ImGui to use, similar to what we did previously for **VMA**.
 
 :::
 
-One important one is that we need to set `use_dynamic_rendering` to `true`, and set
+One important one is that we need to set `UseDynamicRendering` to `true`, and set
 `pColorAttachmentFormats` to our swapchain format, this is because we wont be using vulkan
 render-passes but Dynamic Rendering instead. And unlike with the compute shader, we are going
 to draw dear imgui directly into the swapchain.
@@ -139,14 +148,14 @@ ImGui is initialized now, but we need to hook it into the rendering loop.
 
 First thing we have to do is to add its code into the `engine_run()` procedure.
 
-```odin
+```odin title="engine.odin"
 // Run main loop.
 @(require_results)
 engine_run :: proc(self: ^Engine) -> (ok: bool) {
-    // Other code ---
+    log.info("Entering main loop...")
 
     loop: for !glfw.WindowShouldClose(self.window) {
-        // Other code ---
+        glfw.PollEvents()
 
         // Do not draw if we are minimized
         if self.stop_rendering {
@@ -155,15 +164,15 @@ engine_run :: proc(self: ^Engine) -> (ok: bool) {
         }
 
         // ImGUi new frame
-        im_glfw.new_frame()
-        im_vk.new_frame()
-        im.new_frame()
+        im_glfw.NewFrame()
+        im_vk.NewFrame()
+        im.NewFrame()
 
         // Some ImGUi UI to test
-        im.show_demo_window()
+        im.ShowDemoWindow()
 
         // Make ImGUi calculate internal draw structures
-        im.render()
+        im.Render()
 
         engine_draw(self) or_return
     }
@@ -175,7 +184,7 @@ engine_run :: proc(self: ^Engine) -> (ok: bool) {
 ```
 
 We need to call the 3 procedures for a new frame on imgui. Once that is done, we can now do our
-UI commands. We are going to leave it on the demo window for now. When we call `im.render()`,
+UI commands. We are going to leave it on the demo window for now. When we call `im.Render()`,
 that calculates the vertices/draws/etc that imgui requires to draw the frame, but it does not
 do any drawing on its own. To draw it we will continue it from within our `engine_draw()`
 procedure.
@@ -189,8 +198,8 @@ Instead of calling `vk.CmdBeginRenderpass`, and giving it a VkRenderPass object,
 VkBeginRendering, with a `vk.RenderingInfo` that contains the settings needed for the images to
 draw into.
 
-The `vk.RenderingInfo` points into multiple `vk.RenderingAttachmentInfo` for our target images to
-draw into, so lets begin writing that one into the initializers.
+The `vk.RenderingInfo` points into multiple `vk.RenderingAttachmentInfo` for our target images
+to draw into, so lets see that one into the initializers.
 
 ```odin title="initializers.odin"
 attachment_info :: proc(
@@ -228,7 +237,7 @@ saved.
 With the attachment info done, we can make the `vk.RenderingInfo`. Add a new procedure
 `engine_draw_imgui()` to draw a renderpass that renders imgui.
 
-```odin
+```odin title="engine.odin"
 engine_draw_imgui :: proc(
     self: ^Engine,
     cmd: vk.CommandBuffer,
@@ -236,12 +245,12 @@ engine_draw_imgui :: proc(
 ) -> (
     ok: bool,
 ) {
-    color_attachment := attachment_info(target_view, nil, .GENERAL)
+    color_attachment := attachment_info(target_view, nil, .COLOR_ATTACHMENT_OPTIMAL)
     render_info := rendering_info(self.swapchain_extent, &color_attachment, nil)
 
     vk.CmdBeginRendering(cmd, &render_info)
 
-    im_vk.render_draw_data(im.get_draw_data(), cmd)
+    im_vk.RenderDrawData(im.GetDrawData(), cmd)
 
     vk.CmdEndRendering(cmd)
 
@@ -250,12 +259,21 @@ engine_draw_imgui :: proc(
 ```
 
 We are going to take a render extent to setup a rectangle of pixels to draw, and we will send a
-color attachment and a depth attachment. We dont need the depth attachment right now, thats for
-later.
+color attachment and a depth attachment. We dont need the depth attachment right now, thats
+for later.
+
+:::note[Image layout]
+
+The layout here is `.COLOR_ATTACHMENT_OPTIMAL`, not `.GENERAL` like our compute pass used.
+`vk.CmdBeginRendering` requires the image to actually be in the layout you declare. Skipping
+this causes a validation error, since the image's tracked layout won't match what we told
+`vk.CmdBeginRendering` to expect.
+
+:::
 
 Then we need to call it from our `engine_draw()` procedure.
 
-```odin
+```odin title="engine.odin"
 // Execute a copy from the draw image into the swapchain
 copy_image_to_image(
     cmd,
@@ -273,8 +291,10 @@ transition_image(
     .COLOR_ATTACHMENT_OPTIMAL,
 )
 
+// highlight-start
 // Draw imgui into the swapchain image
-engine_draw_imgui(self, cmd, self.swapchain_image_views[frame.swapchain_image_index])
+engine_draw_imgui(self, cmd, self.swapchain_image_views[swapchain_image_index])
+// highlight-end
 
 // Set swapchain image layout to Present so we can show it on the screen
 transition_image(

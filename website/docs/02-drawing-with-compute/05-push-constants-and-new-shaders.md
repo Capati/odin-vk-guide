@@ -1,9 +1,9 @@
 ---
 sidebar_position: 5
-sidebar_label: "Push Constants and new shaders"
+sidebar_label: "Push Constants and New Shaders"
 ---
 
-# Push Constants and new shaders
+# Push Constants and New Shaders
 
 We have a way to run compute shaders to display, and a way to add debug-UI to the engine. Lets
 use that to send data to the shaders through the UI, and have an interactive thing.
@@ -78,7 +78,7 @@ shader is compiled to SPIR-V.
 We now need to change the pipeline layout creation to configure the pushconstants range. Lets
 first create a structure that mirrors those pushconstants directly into `engine.odin`.
 
-```odin
+```odin title="engine.odin"
 Compute_Push_Constants :: struct {
     data1: [4]f32,
     data2: [4]f32,
@@ -90,29 +90,29 @@ Compute_Push_Constants :: struct {
 To set the push constant ranges, we need to change the code that creates the pipeline layout at
 the start of `engine_init_pipelines`. the new version looks like this.
 
-```odin
-push_constant := vk.PushConstantRange {
-    offset     = 0,
-    size       = size_of(Compute_Push_Constants),
-    stageFlags = {.COMPUTE},
-}
+```odin title="engine.odin"
+engine_init_pipelines :: proc(self: ^Engine) -> (ok: bool) {
+    push_constant := vk.PushConstantRange {
+        offset     = 0,
+        size       = size_of(Compute_Push_Constants),
+        stageFlags = {.COMPUTE},
+    }
 
-compute_layout := vk.PipelineLayoutCreateInfo {
-    sType                  = .PIPELINE_LAYOUT_CREATE_INFO,
-    pSetLayouts            = &self.draw_image_descriptor_layout,
-    setLayoutCount         = 1,
-    pPushConstantRanges    = &push_constant,
-    pushConstantRangeCount = 1,
-}
+    compute_layout := vk.PipelineLayoutCreateInfo {
+        sType                  = .PIPELINE_LAYOUT_CREATE_INFO,
+        pSetLayouts            = &self.draw_image_descriptor_layout,
+        setLayoutCount         = 1,
+        pPushConstantRanges    = &push_constant,
+        pushConstantRangeCount = 1,
+    }
 
-vk_check(
-    vk.CreatePipelineLayout(
-        self.vk_device,
-        &compute_layout,
-        nil,
-        &self.gradient_pipeline_layout,
-    ),
-) or_return
+    vk_check(vk.CreatePipelineLayout(
+        self.vk_device, &compute_layout, nil, &self.gradient_pipeline_layout)) or_return
+
+    engine_init_background_pipelines(self) or_return
+
+    return true
+}
 ```
 
 We need to add a `vk.PushConstantRange` to the pipeline layout info. A `vk.PushConstantRange`
@@ -122,44 +122,76 @@ compute because its the only stage we have right now.
 
 After that, just change the shader to be compiled to be the new one.
 
-```odin
-GRADIENT_COLOR_SPV :: #load("./../../shaders/compiled/gradient_color.comp.spv")
-gradient_color_shader := create_shader_module(self.vk_device, GRADIENT_COLOR_SPV) or_return
-defer vk.DestroyShaderModule(self.vk_device, gradient_color_shader, nil)
+```odin title="engine.odin - engine_init_background_pipelines"
+engine_init_background_pipelines :: proc(self: ^Engine) -> (ok: bool) {
+    GRADIENT_COLOR_SPV :: #load("./../shaders/compiled/gradient_color.comp.spv")
+    gradient_color_shader := create_shader_module(self.vk_device, GRADIENT_COLOR_SPV) or_return
+    defer vk.DestroyShaderModule(self.vk_device, gradient_color_shader, nil)
 
-stage_info := vk.PipelineShaderStageCreateInfo {
-    sType  = .PIPELINE_SHADER_STAGE_CREATE_INFO,
-    stage  = {.COMPUTE},
-    module = gradient_color_shader,
-    pName  = "main",
+    stage_info := vk.PipelineShaderStageCreateInfo {
+        sType  = .PIPELINE_SHADER_STAGE_CREATE_INFO,
+        stage  = {.COMPUTE},
+        module = gradient_color_shader,
+        pName  = "main",
+    }
+
+    // ...
+
+    return true
 }
 ```
 
 This is all we need to add pushconstants to a shader. lets now use them from the render loop.
 
-```odin title="engine_draw_background"
-pc := Compute_Push_Constants {
-    {1, 0, 0, 1}, // data1
-    {0, 0, 1, 1}, // data2
+```odin title="engine.odin"
+// Draw background.
+@(require_results)
+engine_draw_background :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool) {
+    // Bind the gradient drawing compute pipeline
+    vk.CmdBindPipeline(cmd, .COMPUTE, self.gradient_pipeline)
+
+    // Bind the descriptor set containing the draw image for the compute pipeline
+    vk.CmdBindDescriptorSets(
+        cmd,
+        .COMPUTE,
+        self.gradient_pipeline_layout,
+        0,
+        1,
+        &self.draw_image_descriptors,
+        0,
+        nil,
+    )
+    // highlight-start
+
+    pc := Compute_Push_Constants {
+        {1, 0, 0, 1}, // data1
+        {0, 0, 1, 1}, // data2
+        {},           // data3 - empty
+        {},           // data4 - empty
+    }
+
+    // Push constants
+    vk.CmdPushConstants(
+        cmd,
+        self.gradient_pipeline_layout,
+        {.COMPUTE},
+        0,
+        size_of(Compute_Push_Constants),
+        &pc,
+    )
+
+    // highlight-end
+    // Execute the compute pipeline dispatch. We are using 16x16 workgroup size so
+    // we need to divide by it
+    vk.CmdDispatch(
+        cmd,
+        u32(math.ceil_f32(f32(self.draw_extent.width) / 16.0)),
+        u32(math.ceil_f32(f32(self.draw_extent.height) / 16.0)),
+        1,
+    )
+
+    return true
 }
-
-// Push constants
-vk.CmdPushConstants(
-    cmd,
-    self.gradient_pipeline_layout,
-    {.COMPUTE},
-    0,
-    size_of(Compute_Push_Constants),
-    &pc,
-)
-
-// Dispatch the compute shader
-vk.CmdDispatch(
-    cmd,
-    u32(math.ceil_f32(f32(self.draw_extent.width) / 16.0)),
-    u32(math.ceil_f32(f32(self.draw_extent.height) / 16.0)),
-    1,
-)
 ```
 
 To update pushconstants, we call `vk.CmdPushConstants`. it requires the pipeline layout, an
@@ -180,7 +212,7 @@ different compute shaders.
 
 Lets add a struct to `engine.odin` with that.
 
-```odin
+```odin title="engine.odin"
 Compute_Effect_Kind :: enum {
     Gradient,
     Sky,
@@ -194,14 +226,26 @@ Compute_Effect :: struct {
 }
 ```
 
-Now lets add an array of them to the `Engine` structure.
+Now lets add an [Enumerated Array](https://odin-lang.org/docs/overview/#enumerated-array) of
+them to the `Engine` structure, you can remove the gradient pipeline and layout.
 
-```odin
-background_effects:        [Compute_Effect_Kind]Compute_Effect,
-current_background_effect: Compute_Effect_Kind,
+```odin title="engine.odin"
+Engine :: struct {
+    // Rendering resources
+    draw_image:                Allocated_Image,
+    draw_extent:               vk.Extent2D,
+    // diff-remove-start
+    gradient_pipeline:         vk.Pipeline,
+    gradient_pipeline_layout:  vk.PipelineLayout,
+    // diff-remove-end
+    // diff-add-start
+    background_effects:        [Compute_Effect_Kind]Compute_Effect,
+    current_background_effect: Compute_Effect_Kind,
+    // diff-add-end
+}
 ```
 
-Lets change the code on init_pipelines to create 2 of these effects. One will be the gradient
+Lets change the code on `init_pipelines` to create 2 of these effects. One will be the gradient
 we just did, the other is a pretty star-night sky shader.
 
 The sky shader is too complicated to explain here, but feel free to check the code on
@@ -211,76 +255,76 @@ amount of stars.
 
 With 2 shaders, we need to create 2 different `vk.ShaderModule`.
 
-```odin
-gradient_color_shader := create_shader_module(
-    self.vk_device,
-    #load("./../../shaders/compiled/gradient_color.comp.spv"),
-) or_return
-defer vk.DestroyShaderModule(self.vk_device, gradient_color_shader, nil)
+```odin title="engine.odin"
+engine_init_background_pipelines :: proc(self: ^Engine) -> (ok: bool) {
+    GRADIENT_COLOR_SPV :: #load("./../shaders/compiled/gradient_color.comp.spv")
+    gradient_color_shader := create_shader_module(self.vk_device, GRADIENT_COLOR_SPV) or_return
+    defer vk.DestroyShaderModule(self.vk_device, gradient_color_shader, nil)
 
-sky_shader := create_shader_module(
-    self.vk_device,
-    #load("./../../shaders/compiled/sky.comp.spv"),
-) or_return
-defer vk.DestroyShaderModule(self.vk_device, sky_shader, nil)
+    SKY_SPV :: #load("./../shaders/compiled/sky.comp.spv")
+    sky_shader := create_shader_module(self.vk_device, SKY_SPV) or_return
+    defer vk.DestroyShaderModule(self.vk_device, sky_shader, nil)
 
-stage_info := vk.PipelineShaderStageCreateInfo {
-    sType  = .PIPELINE_SHADER_STAGE_CREATE_INFO,
-    stage  = {.COMPUTE},
-    module = gradient_color_shader,
-    pName  = "main",
+    stage_info := vk.PipelineShaderStageCreateInfo {
+        sType  = .PIPELINE_SHADER_STAGE_CREATE_INFO,
+        stage  = {.COMPUTE},
+        module = gradient_color_shader,
+        pName  = "main",
+    }
+
+    compute_pipeline_create_info := vk.ComputePipelineCreateInfo {
+        sType  = .COMPUTE_PIPELINE_CREATE_INFO,
+        layout = self.gradient_pipeline_layout,
+        stage  = stage_info,
+    }
+
+    gradient_color := Compute_Effect {
+        layout = self.gradient_pipeline_layout,
+        name = "Gradient Color",
+        data = {data1 = {1, 0, 0, 1}, data2 = {0, 0, 1, 1}},
+    }
+
+    vk_check(
+        vk.CreateComputePipelines(
+            self.vk_device,
+            0,
+            1,
+            &compute_pipeline_create_info,
+            nil,
+            &gradient_color.pipeline,
+        ),
+    ) or_return
+
+    // Change the shader module only to create the sky shader
+    compute_pipeline_create_info.stage.module = sky_shader
+
+    sky := Compute_Effect {
+        layout = self.gradient_pipeline_layout,
+        name = "Sky",
+        data = {data1 = {0.1, 0.2, 0.4, 0.97}},
+    }
+
+    vk_check(
+        vk.CreateComputePipelines(
+            self.vk_device,
+            0,
+            1,
+            &compute_pipeline_create_info,
+            nil,
+            &sky.pipeline,
+        ),
+    ) or_return
+
+    // Set the 2 background effects
+    self.background_effects[.Gradient] = gradient_color
+    self.background_effects[.Sky] = sky
+
+    deletion_queue_push(&self.main_deletion_queue, self.gradient_pipeline_layout)
+    deletion_queue_push(&self.main_deletion_queue, gradient_color.pipeline)
+    deletion_queue_push(&self.main_deletion_queue, sky.pipeline)
+
+    return true
 }
-
-compute_pipeline_create_info := vk.ComputePipelineCreateInfo {
-    sType  = .COMPUTE_PIPELINE_CREATE_INFO,
-    layout = self.gradient_pipeline_layout,
-    stage  = stage_info,
-}
-
-gradient_color := Compute_Effect {
-    layout = self.gradient_pipeline_layout,
-    name = "Gradient Color",
-    data = {data1 = {1, 0, 0, 1}, data2 = {0, 0, 1, 1}},
-}
-
-vk_check(
-    vk.CreateComputePipelines(
-        self.vk_device,
-        0,
-        1,
-        &compute_pipeline_create_info,
-        nil,
-        &gradient_color.pipeline,
-    ),
-) or_return
-
-// Change the shader module only to create the sky shader
-compute_pipeline_create_info.stage.module = sky_shader
-
-sky := Compute_Effect {
-    layout = self.gradient_pipeline_layout,
-    name = "Sky",
-    data = {data1 = {0.1, 0.2, 0.4, 0.97}},
-}
-
-vk_check(
-    vk.CreateComputePipelines(
-        self.vk_device,
-        0,
-        1,
-        &compute_pipeline_create_info,
-        nil,
-        &sky.pipeline,
-    ),
-) or_return
-
-// Set the 2 background effects
-self.background_effects[.Gradient] = gradient_color
-self.background_effects[.Sky] = sky
-
-deletion_queue_push(&self.main_deletion_queue, self.gradient_pipeline_layout)
-deletion_queue_push(&self.main_deletion_queue, gradient_color.pipeline)
-deletion_queue_push(&self.main_deletion_queue, sky.pipeline)
 ```
 
 We have changed the pipelines procedure. We keep the pipeline layout from before, but now we
@@ -290,45 +334,70 @@ the effects some default data.
 Now we can add the imgui debug window for this. This goes on `engine_run()` procedure. We will
 replace the demo effect call with the new ui logic
 
-```odin
-im.new_frame()
+```odin title="engine.odin"
+engine_run :: proc(self: ^Engine) -> (ok: bool) {
+    log.info("Entering main loop...")
 
-if im.begin("Background", nil, {.Always_Auto_Resize}) {
-    selected := &self.background_effects[self.current_background_effect]
+    loop: for !glfw.WindowShouldClose(self.window) {
+        glfw.PollEvents()
 
-    im.text("Selected effect: %s", selected.name)
-
-    @(static) current_background_effect: i32
-    current_background_effect = i32(self.current_background_effect)
-
-    // If the combo is opened and an item is selected, update the current effect
-    if im.begin_combo("Effect", selected.name) {
-        for effect, i in self.background_effects {
-            is_selected := i32(i) == current_background_effect
-            if im.selectable(effect.name, is_selected) {
-                current_background_effect = i32(i)
-                self.current_background_effect = Compute_Effect_Kind(
-                    current_background_effect,
-                )
-            }
-
-            // Set initial focus when the currently selected item becomes visible
-            if is_selected {
-                im.set_item_default_focus()
-            }
+        // Do not draw if we are minimized
+        if self.stop_rendering {
+            glfw.WaitEvents() // Wait to avoid endless spinning
+            continue loop
         }
-        im.end_combo()
+
+        // ImGUi new frame
+        im_glfw.NewFrame()
+        im_vk.NewFrame()
+        im.NewFrame()
+        // highlight-start
+
+        if im.Begin("Background", nil, {.AlwaysAutoResize}) {
+            selected := &self.background_effects[self.current_background_effect]
+
+            im.Text("Selected effect: %s", selected.name)
+
+            @(static) current_background_effect: i32
+            current_background_effect = i32(self.current_background_effect)
+
+            // If the combo is opened and an item is selected, update the current effect
+            if im.BeginCombo("Effect", selected.name) {
+                for effect, i in self.background_effects {
+                    is_selected := i32(i) == current_background_effect
+                    if im.Selectable(effect.name, is_selected) {
+                        current_background_effect = i32(i)
+                        self.current_background_effect = Compute_Effect_Kind(
+                            current_background_effect,
+                        )
+                    }
+
+                    // Set initial focus when the currently selected item becomes visible
+                    if is_selected {
+                        im.SetItemDefaultFocus()
+                    }
+                }
+                im.EndCombo()
+            }
+
+            im.InputFloat4("data1", &selected.data.data1)
+            im.InputFloat4("data2", &selected.data.data2)
+            im.InputFloat4("data3", &selected.data.data3)
+            im.InputFloat4("data4", &selected.data.data4)
+
+        }
+        im.End()
+
+        // highlight-end
+        im.Render()
+
+        engine_draw(self) or_return
     }
 
-    im.input_float4("data1", &selected.data.data1)
-    im.input_float4("data2", &selected.data.data2)
-    im.input_float4("data3", &selected.data.data3)
-    im.input_float4("data4", &selected.data.data4)
+    log.info("Exiting...")
 
+    return true
 }
-im.end()
-
-im.render()
 ```
 
 First, the code grabs the selected background effect by indexing into the `background_effects`
@@ -347,8 +416,9 @@ allow editing the properties of the selected effect.
 
 Last we need to do is to change the render loop to select the shader selected with its data.
 
-```odin
+```odin title="engine.odin"
 engine_draw_background :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool) {
+    // highlight-next-line
     effect := &self.background_effects[self.current_background_effect]
 
     // Bind the compute pipeline
@@ -366,6 +436,15 @@ engine_draw_background :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: boo
         nil,
     )
 
+    // diff-remove-start
+    pc := Compute_Push_Constants {
+        {1, 0, 0, 1}, // data1
+        {0, 0, 1, 1}, // data2
+        {},           // data3 - empty
+        {},           // data4 - empty
+    }
+    // diff-remove-end
+
     // Push constants
     vk.CmdPushConstants(
         cmd,
@@ -373,6 +452,7 @@ engine_draw_background :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: boo
         {.COMPUTE},
         0,
         size_of(Compute_Push_Constants),
+        // highlight-next-line
         &effect.data,
     )
 

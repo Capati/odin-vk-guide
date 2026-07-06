@@ -17,7 +17,7 @@ itself does the blending mathematics for us, and has a bunch of options. We will
 new blending modes into the pipeline builder, one will be additive blending, where it just adds
 the colors, and the other alpha-blend, where it would mix the colors.
 
-Lets add these 2 functions into the pipeline builder.
+Lets add these 2 procedures into the pipeline builder.
 
 ```odin title="pipelines.odin"
 pipeline_builder_enable_blending_additive :: proc(self: ^Pipeline_Builder) {
@@ -78,12 +78,19 @@ Essentially making it into a lerp controlled by srcColor alpha, which will be fr
 Lets try to use it to see what it does. We dont have alpha set in our shaders, so lets just try
 the additive one. Change the blending on the `engine_init_mesh_pipeline()` function.
 
-```odin
-// pipeline_builder_disable_blending(&builder)
+```odin title="engine.odin"
+// diff-remove-start
+// No blending
+pipeline_builder_disable_blending(&builder)
+// diff-remove-end
+// diff-add-start
+// Enable blending
 pipeline_builder_enable_blending_additive(&builder)
+// diff-add-end
 ```
 
-You should now see the monkey mesh as semi-transparent, letting the color below it show.Play
-around with the blending modes to see what effects they result on.
+You should now see the monkey mesh as semi-transparent, letting the color below it show. Change
+the background to `Sky` to better visualize the blending. Play around with the blending modes
+to see what effects they result on.
 
 Before we move to chapter 4, lets implement window resizing.

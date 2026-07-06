@@ -13,7 +13,7 @@ yet so we will be using the default material.
 We will begin creating the architecture by adding the scene node base structures to
 `drawing.odin`.
 
-```odin
+```odin title="drawing.odin"
 // Base "interface" for renderable dynamic object.
 Renderable :: struct {
     draw: proc(self: ^Renderable, top_matrix: la.Matrix4f32, ctx: ^Draw_Context),
@@ -73,9 +73,9 @@ for subtype polymorphism][].
 
 The `draw` procedure will do nothing, only call `draw()` on children.
 
-This base node does nothing, so we need to add a `Mesh_Node` to `Engine` that displays a mesh.
+This base node does nothing, so we need to add a `Mesh_Node` that displays a mesh.
 
-```odin
+```odin title="drawing.odin"
 // Mesh node that holds a mesh asset and can be drawn.
 Mesh_Node :: struct {
     using node: Node,
@@ -123,7 +123,7 @@ every frame (or cached), and execute a single vulkan draw procedure for each.
 
 With those defined, the `mesh_node_draw()` procedure of the mesh node looks like this:
 
-```odin
+```odin title="drawing.odin"
 // Draw implementation for mesh nodes.
 // Converts mesh data into render objects for the renderer.
 mesh_node_draw :: proc(self: ^Renderable, top_matrix: la.Matrix4x4f32, ctx: ^Draw_Context) {
@@ -166,8 +166,8 @@ To do that, remove the code that used to draw the monkey head. We will be replac
 the code on `engine_draw_geometry` after the first triangle draw gets removed.
 
 To hold the draw list, we add the `Draw_Context` structure into the `Engine` structure. We will
-also add a `engine_update_scene()` procedure where we will call the draw procedures outside of the
-vulkan render loop. Also a `map` of `Node`'s that will contain the meshes we load. This
+also add a `engine_update_scene()` procedure where we will call the draw procedures outside of
+the vulkan render loop. Also a `map` of `Node`'s that will contain the meshes we load. This
 procedure will also handle the logic like setting up the camera.
 
 ```odin title="engine.odin"
@@ -189,14 +189,13 @@ as this uses it.
 
 The relevant code is highlighted bellow:
 
-```odin title="drawing.odin" {68-109}
+```odin title="drawing.odin"
 engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool) {
     // Begin a render pass connected to our draw image
-    color_attachment := attachment_info(self.draw_image.image_view, nil, .COLOR_ATTACHMENT_OPTIMAL)
+    color_attachment := attachment_info(
+        self.draw_image.image_view, nil, .COLOR_ATTACHMENT_OPTIMAL)
     depth_attachment := depth_attachment_info(
-        self.depth_image.image_view,
-        .DEPTH_ATTACHMENT_OPTIMAL,
-    )
+        self.depth_image.image_view, .DEPTH_ATTACHMENT_OPTIMAL)
 
     render_info := rendering_info(self.draw_extent, &color_attachment, &depth_attachment)
     vk.CmdBeginRendering(cmd, &render_info)
@@ -240,7 +239,7 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
     scene_uniform_data^ = self.scene_data
 
     // Create a descriptor set that binds that buffer and update it
-    global_descriptor := descriptor_growable_allocate(
+    global_descriptor = descriptor_growable_allocate(
         &frame.frame_descriptors,
         &self.gpu_scene_data_descriptor_layout,
     ) or_return
@@ -257,6 +256,7 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
     )
     descriptor_writer_update_set(&writer, global_descriptor)
 
+    // highlight-start
     // Draw all opaque surfaces
     for &draw in self.main_draw_context.opaque_surfaces {
         vk.CmdBindPipeline(cmd, .GRAPHICS, draw.material.pipeline.pipeline)
@@ -299,6 +299,7 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
 
         vk.CmdDrawIndexed(cmd, draw.index_count, 1, draw.first_index, 0, 0)
     }
+    // highlight-end
 
     vk.CmdEndRendering(cmd)
 
@@ -308,7 +309,8 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
 
 When the `Render_Object` was designed, it was meant to directly convert into a single draw
 command on vulkan. So there is no logic other than directly binding the stuff and calling
-`vk.CmdDraw`. We are binding the data every draw which is inefficient but we will fix that later.
+`vk.CmdDraw`. We are binding the data every draw which is inefficient but we will fix that
+later.
 
 Last thing is going to be using the mesh load we loaded last chapter to create some Nodes, and
 then drawing them so they add the meshes into the draw context. The `load_meshes` is not
@@ -324,7 +326,7 @@ Material :: struct {
 Geo_Surface :: struct {
     start_index: u32,
     count:       u32,
-    material:    ^Material,
+    material:    Material,
 }
 ```
 

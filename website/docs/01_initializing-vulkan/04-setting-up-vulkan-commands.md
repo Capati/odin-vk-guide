@@ -9,7 +9,7 @@ We will begin by writing our `Frame_Data` struct, on the `engine.odin` file. Thi
 structures and commands we will need to draw a given frame, as we will be double-buffering,
 with the GPU running some commands while we write into others.
 
-```odin
+```odin title="engine.odin"
 Frame_Data :: struct {
     command_pool:        vk.CommandPool,
     main_command_buffer: vk.CommandBuffer,
@@ -21,9 +21,10 @@ FRAME_OVERLAP :: 2
 We also need to add those into the `Engine` structure, alongside the members we will use to
 store the queue.
 
-```odin
+```odin title="engine.odin"
 Engine :: struct {
-    // other code ---
+    // ...
+
     // Frame resources
     frames:                [FRAME_OVERLAP]Frame_Data,
     frame_number:          int,
@@ -32,7 +33,7 @@ Engine :: struct {
 }
 
 engine_get_current_frame :: #force_inline proc(self: ^Engine) -> ^Frame_Data #no_bounds_check {
-  return &self.frames[self.frame_number % FRAME_OVERLAP]
+    return &self.frames[self.frame_number % FRAME_OVERLAP]
 }
 ```
 
@@ -52,19 +53,32 @@ structures.
 
 At the end of it, add this code.
 
-```odin
+```odin title="engine.odin"
 engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
     // ---- other code, initializing vulkan device ----
 
     // use vk-bootstrap to get a Graphics queue
-    self.graphics_queue = vkb.device_get_queue(self.vkb.device, .Graphics) or_return
-    self.graphics_queue_family = vkb.device_get_queue_index(self.vkb.device, .Graphics) or_return
+    graphics_queue, graphics_queue_err :=
+        vkb.device_get_queue(self.vkb.device, .Graphics)
+    if graphics_queue_err != nil {
+        log.errorf("Failed to get graphics queue: %#v", graphics_queue_err)
+        return
+    }
+    graphics_queue_family, graphics_queue_family_err :=
+        vkb.device_get_queue_index(self.vkb.device, .Graphics)
+    if graphics_queue_family_err != nil {
+        log.errorf("Failed to get graphics queue family: %#v", graphics_queue_family_err)
+        return
+    }
+
+    self.graphics_queue = graphics_queue
+    self.graphics_queue_family = graphics_queue_family
 
     return true
 }
 ```
 
-We begin by requesting both a queue family and a queue of type Graphics from `vkb`.
+We begin by requesting both a queue family and a queue of type `Graphics` from `vkb`.
 
 ## Creating the Command structures
 
@@ -72,7 +86,7 @@ For the pool, we start adding code into `engine_init_commands()` unlike before, 
 `vkb` library will not do anything for us, and we will start calling the Vulkan commands
 directly.
 
-```odin
+```odin title="engine.odin"
 engine_init_commands :: proc(self: ^Engine) -> (ok: bool) {
     // Create a command pool for commands submitted to the graphics queue.
     // We also want the pool to allow for resetting of individual command buffers.
@@ -85,14 +99,8 @@ engine_init_commands :: proc(self: ^Engine) -> (ok: bool) {
 
     for &frame in self.frames {
         // Create the command pool
-        vk_check(
-            vk.CreateCommandPool(
-                self.vk_device,
-                &command_pool_info,
-                nil,
-                &frame.command_pool,
-            ),
-        )
+        vk_check(vk.CreateCommandPool(
+            self.vk_device, &command_pool_info, nil, &frame.command_pool)) or_return
 
         // Allocate the default command buffer that we will use for rendering
         cmd_alloc_info := vk.CommandBufferAllocateInfo {
@@ -103,13 +111,8 @@ engine_init_commands :: proc(self: ^Engine) -> (ok: bool) {
             level              = .PRIMARY,
         }
 
-        vk_check(
-            vk.AllocateCommandBuffers(
-                self.vk_device,
-                &cmd_alloc_info,
-                &frame.main_command_buffer,
-            ),
-        )
+        vk_check(vk.AllocateCommandBuffers(
+            self.vk_device, &cmd_alloc_info, &frame.main_command_buffer)) or_return
     }
 
     return true
@@ -179,7 +182,7 @@ If you remember the article that explored the project files, we commented that t
 `initializers.odin` file will contain abstraction over the initialization of Vulkan structures.
 Let's look into the implementation for those 2 structures.
 
-```odin title="tutorial/01_initializing_vulkan/initializers.odin"
+```odin title="initializers.odin"
 command_pool_create_info :: proc(
     queueFamilyIndex: u32,
     flags: vk.CommandPoolCreateFlags = {},
@@ -210,7 +213,7 @@ We will be hardcoding command buffer level to `PRIMARY` . As we wont ever be usi
 command buffers, we can just ignore their existence and configuration parameters. By
 abstracting things with defaults that match your engine, you can simplify things a bit.
 
-```odin title="tutorial/01_initializing_vulkan/engine.odin"
+```odin title="engine.odin"
 engine_init_commands :: proc(self: ^Engine) -> (ok: bool) {
     // Create a command pool for commands submitted to the graphics queue.
     // We also want the pool to allow for resetting of individual command buffers.
@@ -221,16 +224,14 @@ engine_init_commands :: proc(self: ^Engine) -> (ok: bool) {
 
     for &frame in self.frames {
         // Create the command pool
-        vk_check(
-            vk.CreateCommandPool(self.vk_device, &command_pool_info, nil, &frame.command_pool),
-        )
+        vk_check(vk.CreateCommandPool(
+            self.vk_device, &command_pool_info, nil, &frame.command_pool)) or_return
 
         // Allocate the default command buffer that we will use for rendering
         cmd_alloc_info := command_buffer_allocate_info(frame.command_pool)
 
-        vk_check(
-            vk.AllocateCommandBuffers(self.vk_device, &cmd_alloc_info, &frame.main_command_buffer),
-        )
+        vk_check(vk.AllocateCommandBuffers(
+            self.vk_device, &cmd_alloc_info, &frame.main_command_buffer)) or_return
     }
 
     return true
@@ -266,7 +267,8 @@ objects. It's not possible to individually destroy `vk.CommandBuffer`, destroyin
 pool will destroy all of the command buffers allocated from it.
 
 `vk.Queue`-s also can't be destroyed, as, like with the `vk.PhysicalDevice`, they aren't really
-created objects, more like a handle to something that already exists as part of the VkInstance.
+created objects, more like a handle to something that already exists as part of the
+`vk.Device`.
 
 We now have a way to send commands to the gpu, but we still need another piece, which is the
 synchronization structures to sincronize GPU execution with CPU.

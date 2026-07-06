@@ -11,10 +11,10 @@ parent-child relationships.
 
 ## Main Window Setup
 
-The `engine_ui_definition` procedure from `drawing.odin` is where we set up the ImGui window
+The `engine_ui_definition` procedure from `engine.odin` is where we set up the ImGui window
 that will house our scene tree.
 
-```odin title="drawing.odin"
+```odin title="engine.odin"
 engine_ui_definition :: proc(self: ^Engine) {
     // imgui new frame
     im_glfw.new_frame()

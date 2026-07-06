@@ -147,22 +147,17 @@ values can be too much or not enough, but we can adjust them as needed.
 
 :::
 
-```odin title="descriptors.odin"
+```odin title="descriptors.odin (create the file)"
 package vk_guide
-
-// Core
-import sa "core:container/small_array"
 
 // Vendor
 import vk "vendor:vulkan"
 
 MAX_BOUND_DESCRIPTOR_SETS :: #config(MAX_BOUND_DESCRIPTOR_SETS, 16)
 
-Descriptor_Bindings :: sa.Small_Array(MAX_BOUND_DESCRIPTOR_SETS, vk.DescriptorSetLayoutBinding)
-
 Descriptor_Layout_Builder :: struct {
     device:   vk.Device,
-    bindings: Descriptor_Bindings,
+    bindings: [dynamic; MAX_BOUND_DESCRIPTOR_SETS]vk.DescriptorSetLayoutBinding,
 }
 
 descriptor_layout_builder_init :: proc(self: ^Descriptor_Layout_Builder, device: vk.Device) {
@@ -178,15 +173,15 @@ object, not a info/config structure.
 
 In Vulkan, the concept of "descriptor set layouts" relates to how resources like textures and
 buffers are organized for shaders. The maximum number of descriptor set layouts a pipeline can
-have is tied to the device's `maxBoundDescriptorSets` limit, which indicates how many descriptor
-sets can be bound at once. This value is not fixed and depends on the specific GPU, but it's
-commonly at least 4, with some devices supporting up to 8.
+have is tied to the device's `maxBoundDescriptorSets` limit, which indicates how many
+descriptor sets can be bound at once. This value is not fixed and depends on the specific GPU,
+but it's commonly at least 4, with some devices supporting up to 8.
 
 :::
 
 Lets write the procedures for that builder.
 
-```odin
+```odin title="descriptors.odin"
 descriptor_layout_builder_add_binding :: proc(
     self: ^Descriptor_Layout_Builder,
     binding: u32,
@@ -194,7 +189,7 @@ descriptor_layout_builder_add_binding :: proc(
     loc := #caller_location,
 ) {
     // Assert that we haven't exceeded the maximum number of descriptor sets
-    assert(sa.len(self.bindings) < MAX_BOUND_DESCRIPTOR_SETS, loc = loc)
+    assert(len(self.bindings) < MAX_BOUND_DESCRIPTOR_SETS, loc = loc)
 
     new_binding := vk.DescriptorSetLayoutBinding {
         binding         = binding,
@@ -202,11 +197,11 @@ descriptor_layout_builder_add_binding :: proc(
         descriptorType  = type,
     }
 
-    sa.push_back(&self.bindings, new_binding)
+    append(&self.bindings, new_binding)
 }
 
 descriptor_layout_builder_clear :: proc(self: ^Descriptor_Layout_Builder) {
-    sa.clear(&self.bindings)
+    clear(&self.bindings)
 }
 ```
 
@@ -218,7 +213,7 @@ image.
 
 Next is creating the layout itself.
 
-```odin
+```odin title="descriptors.odin"
 descriptor_layout_builder_build :: proc(
     self: ^Descriptor_Layout_Builder,
     shader_stages: vk.ShaderStageFlags,
@@ -229,18 +224,20 @@ descriptor_layout_builder_build :: proc(
     set: vk.DescriptorSetLayout,
     ok: bool,
 ) #optional_ok {
-    assert(shader_stages != {}, "No shader stages specified for descriptor set layout.", loc = loc)
-    assert(sa.len(self.bindings) > 0, "No bindings added to descriptor layout builder.", loc = loc)
+    assert(shader_stages != {}, 
+        "No shader stages specified for descriptor set layout.", loc = loc)
+    assert(len(self.bindings) > 0, 
+        "No bindings added to descriptor layout builder.", loc = loc)
 
-    for &b in sa.slice(&self.bindings) {
+    for &b in self.bindings {
         b.stageFlags += shader_stages
     }
 
     info := vk.DescriptorSetLayoutCreateInfo {
         sType        = .DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
         pNext        = pNext,
-        bindingCount = u32(sa.len(self.bindings)),
-        pBindings    = raw_data(sa.slice(&self.bindings)),
+        bindingCount = u32(len(self.bindings)),
+        pBindings    = raw_data(self.bindings[:]),
         flags        = flags,
     }
 
@@ -264,7 +261,7 @@ return the set layout.
 With the layout, we can now allocate the descriptor sets. Lets also write a allocator struct
 that will abstract it so that we can keep using it through the codebase.
 
-```odin
+```odin title="descriptors.odin"
 Pool_Size_Ratio :: struct {
     type:  vk.DescriptorType,
     ratio: f32,
@@ -272,7 +269,7 @@ Pool_Size_Ratio :: struct {
 
 Descriptor_Allocator :: struct {
     device: vk.Device,
-    vk.DescriptorPool,
+    pool:   vk.DescriptorPool,
 }
 ```
 
@@ -299,7 +296,7 @@ Lets write the code now.
 ```odin
 MAX_POOL_SIZES :: #config(MAX_POOL_SIZES, 12)
 
-Pool_Sizes :: sa.Small_Array(MAX_POOL_SIZES, vk.DescriptorPoolSize)
+Pool_Sizes :: [dynamic; MAX_POOL_SIZES]vk.DescriptorPoolSize
 
 descriptor_allocator_init_pool :: proc(
     self: ^Descriptor_Allocator,
@@ -314,7 +311,7 @@ descriptor_allocator_init_pool :: proc(
     pool_sizes: Pool_Sizes
 
     for &ratio in pool_ratios {
-        sa.push_back(
+        append(
             &pool_sizes,
             vk.DescriptorPoolSize {
                 type = ratio.type,
@@ -326,8 +323,8 @@ descriptor_allocator_init_pool :: proc(
     pool_info := vk.DescriptorPoolCreateInfo {
         sType         = .DESCRIPTOR_POOL_CREATE_INFO,
         maxSets       = max_sets,
-        poolSizeCount = u32(sa.len(pool_sizes)),
-        pPoolSizes    = raw_data(sa.slice(&pool_sizes)),
+        poolSizeCount = u32(len(pool_sizes)),
+        pPoolSizes    = raw_data(pool_sizes[:]),
     }
 
     vk_check(vk.CreateDescriptorPool(device, &pool_info, nil, &self.pool)) or_return
@@ -357,7 +354,7 @@ owned.
 
 Now we need the last procedure, `descriptor_allocator_allocate`. Here it is.
 
-```odin
+```odin title="descriptors.odin"
 descriptor_allocator_allocate :: proc(
     self: ^Descriptor_Allocator,
     device: vk.Device,
@@ -386,8 +383,11 @@ allocate from, how many descriptor sets to allocate, and the set layout.
 
 Lets add a new procedure to the engine and some new fields we will use.
 
-```odin
+```odin title="engine.odin"
 Engine :: struct {
+    // ...
+
+    // Descriptor management
     global_descriptor_allocator:  Descriptor_Allocator,
     draw_image_descriptors:       vk.DescriptorSet,
     draw_image_descriptor_layout: vk.DescriptorSetLayout,
@@ -401,14 +401,13 @@ layout for that type of descriptor, which we will need later for creating the pi
 Remember to add the `engine_init_descriptors()` procedure to the `engine_init()` procedure of
 the engine, after `engine_sync_structures`.
 
-```odin
+```odin title="engine.odin"
 engine_init :: proc(self: ^Engine) -> (ok: bool) {
     // Other code ---
 
     engine_init_commands(self) or_return
-
     engine_init_sync_structures(self) or_return
-
+    // highlight-next-line
     engine_init_descriptors(self) or_return // < here
 
     // Everything went fine
@@ -420,17 +419,13 @@ engine_init :: proc(self: ^Engine) -> (ok: bool) {
 
 We can now begin writing the procedure.
 
-```odin
+```odin title="engine.odin"
 engine_init_descriptors :: proc(self: ^Engine) -> (ok: bool) {
     // Create a descriptor pool that will hold 10 sets with 1 image each
     sizes := []Pool_Size_Ratio{{.STORAGE_IMAGE, 1}}
 
     descriptor_allocator_init_pool(
-        &self.global_descriptor_allocator,
-        self.vk_device,
-        10,
-        sizes,
-    ) or_return
+        &self.global_descriptor_allocator, self.vk_device, 10, sizes) or_return
     deletion_queue_push(&self.main_deletion_queue, self.global_descriptor_allocator.pool)
 
     {
@@ -438,10 +433,8 @@ engine_init_descriptors :: proc(self: ^Engine) -> (ok: bool) {
         builder: Descriptor_Layout_Builder
         descriptor_layout_builder_init(&builder, self.vk_device)
         descriptor_layout_builder_add_binding(&builder, 0, .STORAGE_IMAGE)
-        self.draw_image_descriptor_layout = descriptor_layout_builder_build(
-            &builder,
-            {.COMPUTE},
-        ) or_return
+        self.draw_image_descriptor_layout =
+            descriptor_layout_builder_build(&builder, {.COMPUTE}) or_return
     }
     deletion_queue_push(&self.main_deletion_queue, self.draw_image_descriptor_layout)
 
@@ -533,12 +526,13 @@ load_shader_module :: proc(
     ok: bool,
 ) #optional_ok {
     runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
-    if code, code_ok := os.read_entire_file(file_path, context.temp_allocator); code_ok {
-        // Create a new shader module, using the code we loaded
-        return create_shader_module(device, code)
+    code, code_err := os.read_entire_file(file_path, context.temp_allocator)
+    if code_err != nil {
+        log.errorf("Failed to load shader file [%s]: %#v", file_path, code_err)
+        return
     }
-    log.errorf("Failed to load shader file: [%s]", file_path)
-    return
+    // Create a new shader module, using the code we loaded
+    return create_shader_module(device, code)
 }
 
 create_shader_module :: proc(
@@ -574,26 +568,31 @@ Back to `engine.odin`, lets add the new fields we will need in the `Engine` stru
 `engine_init_pipelines()` will call the other pipeline initialization procedures that we will
 add as the tutorial progresses.
 
-```odin
+```odin title="engine.odin"
 Engine :: struct {
+    // ...
+
+    // Rendering resources
+    draw_image:               Allocated_Image,
+    draw_extent:              vk.Extent2D,
+    // highlight-start
     gradient_pipeline:        vk.Pipeline,
     gradient_pipeline_layout: vk.PipelineLayout,
+    // highlight-end
 }
 ```
 
 Add it  to the `engine_init` procedure. The `engine_init_pipelines()` procedure will call
 `init_background_pipelines()`
 
-```odin
+```odin title="engine.odin"
 engine_init :: proc(self: ^Engine) -> (ok: bool) {
     // Other code ---
 
     engine_init_commands(self) or_return
-
     engine_init_sync_structures(self) or_return
-
     engine_init_descriptors(self) or_return
-
+    // highlight-next-line
     engine_init_pipelines(self) or_return // < here
 
     // Everything went fine
@@ -610,22 +609,16 @@ engine_init_pipelines :: proc(self: ^Engine) -> (ok: bool) {
 
 Lets now begin creating the pipeline. The first thing we will do is create the pipeline layout.
 
-```odin
+```odin title="engine.odin"
 engine_init_background_pipelines :: proc(self: ^Engine) -> (ok: bool) {
     compute_layout := vk.PipelineLayoutCreateInfo {
-        sType                  = .PIPELINE_LAYOUT_CREATE_INFO,
-        pSetLayouts            = &self.draw_image_descriptor_layout,
-        setLayoutCount         = 1,
+        sType          = .PIPELINE_LAYOUT_CREATE_INFO,
+        pSetLayouts    = &self.draw_image_descriptor_layout,
+        setLayoutCount = 1,
     }
 
-    vk_check(
-        vk.CreatePipelineLayout(
-            self.vk_device,
-            &compute_layout,
-            nil,
-            &self.gradient_pipeline_layout,
-        ),
-    ) or_return
+    vk_check(vk.CreatePipelineLayout(
+        self.vk_device, &compute_layout, nil, &self.gradient_pipeline_layout)) or_return
 
     return true
 }
@@ -636,13 +629,13 @@ configuration such as push-constants. On this shader we wont need those so we ca
 leaving only the DescriptorSetLayout.
 
 Now, we are going to create the pipeline object itself by loading the shader module and adding
-it plus other options into a VkComputePipelineCreateInfo.
+it plus other options into a `vk.ComputePipelineCreateInfo`.
 
-```odin
+```odin title="engine.odin"
 engine_init_background_pipelines :: proc(self: ^Engine) -> (ok: bool) {
     // Other code ---
 
-    GRADIENT_COMP_SPV :: #load("./../../shaders/compiled/gradient.comp.spv")
+    GRADIENT_COMP_SPV :: #load("./../shaders/compiled/gradient.comp.spv")
     gradient_shader := create_shader_module(self.vk_device, GRADIENT_COMP_SPV) or_return
     defer vk.DestroyShaderModule(self.vk_device, gradient_shader, nil)
 
@@ -659,26 +652,30 @@ engine_init_background_pipelines :: proc(self: ^Engine) -> (ok: bool) {
         stage  = stage_info,
     }
 
-    vk_check(
-        vk.CreateComputePipelines(
-            self.vk_device,
-            0,
-            1,
-            &compute_pipeline_create_info,
-            nil,
-            &self.gradient_pipeline,
-        ),
-    ) or_return
+    vk_check(vk.CreateComputePipelines(
+        self.vk_device,
+        0,
+        1,
+        &compute_pipeline_create_info,
+        nil,
+        &self.gradient_pipeline,
+    )) or_return
 
     return true
 }
 ```
 
 First we load the `gradient_shader` `vk.ShaderModule` by using the procedure we created just
-now. We will check for error as its very common for it to fail if the file is wrong. Keep in
-mind that the paths here are configured to work for the default windows + msvc build folders.
-If you are using any other option, check that the file paths are correct. Consider abstracting
-the path yourself to work from a folder set in a config file.
+now. We will check for error as its very common for it to fail if the file is wrong.
+
+:::tip[Shader path]
+
+Keep in mind that the paths here are configured assuming the code is running from the root
+directory and the source is in the `src` folder. If you are using any other option, check that
+the file paths are correct. Consider abstracting the path yourself to work from a folder set
+in a config file.
+
+:::
 
 Then, we need to connect the shader into a `vk.PipelineShaderStageCreateInfo`. The thing to
 note here is that we are giving it the name of the procedure we want the shader to use, which
@@ -691,7 +688,7 @@ shader, and the layout. We can  then call `vk.CreateComputePipelines`.
 At the end of the procedure, we will do proper cleanup of the structures so that they get
 deleted at the end of the program through the deletion queue.
 
-```odin
+```odin title="engine.odin"
 engine_init_background_pipelines :: proc(self: ^Engine) -> (ok: bool) {
     // Other code ---
 
@@ -713,7 +710,7 @@ We are now ready to draw with it.
 Go back to the `engine_draw_background()` procedure, we will replace the `vk.CmdClear` with a
 compute shader invocation.
 
-```odin
+```odin title="engine.odin"
 engine_draw_background :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool) {
     // Bind the gradient drawing compute pipeline
     vk.CmdBindPipeline(cmd, .COMPUTE, self.gradient_pipeline)

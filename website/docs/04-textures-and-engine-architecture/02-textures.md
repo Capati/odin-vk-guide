@@ -26,7 +26,7 @@ Allocated_Image :: struct {
 
 destroy_image :: proc(self: Allocated_Image) {
     vk.DestroyImageView(self.device, self.image_view, nil)
-    vma.destroy_image(self.allocator, self.image, self.allocation)
+    vma.DestroyImage(self.allocator, self.image, self.allocation)
 }
 ```
 
@@ -73,7 +73,7 @@ create_image :: proc {
 
 Now we start writing the procedures implementations.
 
-```odin
+```odin title="images.odin"
 @(require_results)
 create_image_default :: proc(
     self: ^Engine,
@@ -92,28 +92,27 @@ create_image_default :: proc(
 
     img_info := image_create_info(format, usage, size)
     if mipmapped {
-        img_info.mipLevels = u32(math.floor(math.log2(max(f32(size.width), f32(size.height))))) + 1
+        img_info.mipLevels =
+            u32(math.floor(math.log2(max(f32(size.width), f32(size.height))))) + 1
     }
 
     // Always allocate images on dedicated GPU memory
-    alloc_info := vma.Allocation_Create_Info {
-        usage          = .Gpu_Only,
-        required_flags = {.DEVICE_LOCAL},
+    alloc_info := vma.AllocationCreateInfo {
+        usage         = .GPU_ONLY,
+        requiredFlags = {.DEVICE_LOCAL},
     }
 
     // Allocate and create the image
-    vk_check(
-        vma.create_image(
-            self.vma_allocator,
-            img_info,
-            alloc_info,
-            &new_image.image,
-            &new_image.allocation,
-            nil,
-        ),
-    ) or_return
+    vk_check(vma.CreateImage(
+        self.vma_allocator,
+        img_info,
+        alloc_info,
+        &new_image.image,
+        &new_image.allocation,
+        nil,
+    )) or_return
     defer if !ok {
-        vma.destroy_image(self.vma_allocator, new_image.image, nil)
+        vma.DestroyImage(self.vma_allocator, new_image.image, nil)
     }
 
     // If the format is a depth format, we will need to have it use the correct aspect flag
@@ -125,7 +124,8 @@ create_image_default :: proc(
     // Build a image-view for the draw image to use for rendering
     view_info := imageview_create_info(new_image.image_format, new_image.image, aspect_flag)
 
-    vk_check(vk.CreateImageView(self.vk_device, &view_info, nil, &new_image.image_view)) or_return
+    vk_check(vk.CreateImageView(
+        self.vk_device, &view_info, nil, &new_image.image_view)) or_return
     defer if !ok {
         vk.DestroyImageView(self.vk_device, new_image.image_view, nil)
     }
@@ -147,7 +147,9 @@ as a procedure group version of the same `create_image_default` procedure, but t
 `rawptr` data parameter for pixels. We will be hardcoding our textures to just be **RGBA 8**
 bit format here, as thats the format most image files are at.
 
-```odin
+```odin title="images.odin"
+import intr "base:intrinsics" // <- import at the top
+
 @(require_results)
 create_image_from_data :: proc(
     self: ^Engine,
@@ -161,10 +163,10 @@ create_image_from_data :: proc(
     ok: bool,
 ) {
     data_size := vk.DeviceSize(size.depth * size.width * size.height * 4)
-    upload_buffer := create_buffer(self, data_size, {.TRANSFER_SRC}, .Cpu_To_Gpu) or_return
+    upload_buffer := create_buffer(self, data_size, {.TRANSFER_SRC}, .CPU_TO_GPU) or_return
     defer destroy_buffer(upload_buffer)
 
-    intr.mem_copy(upload_buffer.info.mapped_data, data, data_size)
+    intr.mem_copy(upload_buffer.info.pMappedData, data, data_size)
 
     usage := usage
     usage += {.TRANSFER_DST, .TRANSFER_SRC}
@@ -227,11 +229,11 @@ Once we have the image and the staging buffer, we run an immediate submit that w
 staging buffer pixel data into the image.
 
 Similar to how we do it with the swapchain images, we first transition the image into
-`TRANSFER_DST_OPTIMAL`. Then we create a `copy_region` structure, where we have the parameters for
-the copy command. This will require the image size and the target image layers and mip levels.
-Image layers is for textures that have multiple layers, one of the most common examples is a
-cubemap texture, which will have 6 layers, one per each cubemap face. We will do that later
-when we setup reflection cubemaps.
+`TRANSFER_DST_OPTIMAL`. Then we create a `copy_region` structure, where we have the parameters
+for the copy command. This will require the image size and the target image layers and mip
+levels. Image layers is for textures that have multiple layers, one of the most common
+examples is a cubemap texture, which will have 6 layers, one per each cubemap face. We will do
+that later when we setup reflection cubemaps.
 
 For mip level, we will copy the data into mip level 0 which is the top level. The image doesnt
 have any more mip levels. For now we are just passing the `mipmapped` boolean into the other
@@ -244,7 +246,7 @@ use when something fails to load.
 Lets add those test images into the `Engine` structure, and a couple samplers too that we can
 use with those images and others.
 
-```odin
+```odin title="engine.odin"
 Engine :: struct {
     // Textures
     white_image:              Allocated_Image,
@@ -290,33 +292,18 @@ engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
 
     // 3 default textures, white, grey, black. 1 pixel each
     white := pack_unorm_4x8({1, 1, 1, 1})
-    self.white_image = create_image_from_data(
-        self,
-        &white,
-        {1, 1, 1},
-        .R8G8B8A8_UNORM,
-        {.SAMPLED},
-    ) or_return
+    self.white_image = create_image_from_data(self,
+        &white, {1, 1, 1}, .R8G8B8A8_UNORM, {.SAMPLED}) or_return
     deletion_queue_push(&self.main_deletion_queue, self.white_image)
 
     grey := pack_unorm_4x8({0.66, 0.66, 0.66, 1})
-    self.grey_image = create_image_from_data(
-        self,
-        &grey,
-        {1, 1, 1},
-        .R8G8B8A8_UNORM,
-        {.SAMPLED},
-    ) or_return
+    self.grey_image = create_image_from_data(self,
+        &grey, {1, 1, 1}, .R8G8B8A8_UNORM, {.SAMPLED}) or_return
     deletion_queue_push(&self.main_deletion_queue, self.grey_image)
 
     black := pack_unorm_4x8({0, 0, 0, 0})
-    self.black_image = create_image_from_data(
-        self,
-        &black,
-        {1, 1, 1},
-        .R8G8B8A8_UNORM,
-        {.SAMPLED},
-    ) or_return
+    self.black_image = create_image_from_data(self,
+        &black, {1, 1, 1}, .R8G8B8A8_UNORM, {.SAMPLED}) or_return
     deletion_queue_push(&self.main_deletion_queue, self.black_image)
 
     // Checkerboard image
@@ -327,13 +314,8 @@ engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
             pixels[y * 16 + x] = ((x % 2) ~ (y % 2)) != 0 ? magenta : black
         }
     }
-    self.error_checkerboard_image = create_image_from_data(
-        self,
-        raw_data(pixels[:]),
-        {16, 16, 1},
-        .R8G8B8A8_UNORM,
-        {.SAMPLED},
-    ) or_return
+    self.error_checkerboard_image = create_image_from_data(self,
+        raw_data(pixels[:]), {16, 16, 1}, .R8G8B8A8_UNORM, {.SAMPLED}) or_return
     deletion_queue_push(&self.main_deletion_queue, self.error_checkerboard_image)
 
     sampler_info := vk.SamplerCreateInfo {
@@ -342,17 +324,15 @@ engine_init_default_data :: proc(self: ^Engine) -> (ok: bool) {
         minFilter = .NEAREST,
     }
 
-    vk_check(
-        vk.CreateSampler(self.vk_device, &sampler_info, nil, &self.default_sampler_nearest),
-    ) or_return
+    vk_check(vk.CreateSampler(
+        self.vk_device, &sampler_info, nil, &self.default_sampler_nearest)) or_return
     deletion_queue_push(&self.main_deletion_queue, self.default_sampler_nearest)
 
     sampler_info.magFilter = .LINEAR
     sampler_info.minFilter = .LINEAR
 
-    vk_check(
-        vk.CreateSampler(self.vk_device, &sampler_info, nil, &self.default_sampler_linear),
-    ) or_return
+    vk_check(vk.CreateSampler(
+        self.vk_device, &sampler_info, nil, &self.default_sampler_linear)) or_return
     deletion_queue_push(&self.main_deletion_queue, self.default_sampler_linear)
 
     return true
@@ -426,7 +406,7 @@ This does change our pipeline layout, so we are going to need to update it too.
 
 Lets add the layout into `Engine` structure, as we will keep it around.
 
-```odin
+```odin title="engine.odin"
 Engine :: struct {
     // Textures
     single_image_descriptor_layout: vk.DescriptorSetLayout,
@@ -443,12 +423,10 @@ engine_init_descriptors :: proc(self: ^Engine) -> (ok: bool) {
         builder: Descriptor_Layout_Builder
         descriptor_layout_builder_init(&builder, self.vk_device)
         descriptor_layout_builder_add_binding(&builder, 0, .COMBINED_IMAGE_SAMPLER)
-        self.single_image_descriptor_layout = descriptor_layout_builder_build(
-            &builder,
-            {.FRAGMENT},
-        ) or_return
+        self.single_image_descriptor_layout =
+            descriptor_layout_builder_build(&builder, {.FRAGMENT}) or_return
+        deletion_queue_push(&self.main_deletion_queue, self.single_image_descriptor_layout)
     }
-    deletion_queue_push(&self.main_deletion_queue, self.single_image_descriptor_layout)
 
     return true
 }
@@ -461,17 +439,19 @@ creation.
 
 ```odin
 engine_init_mesh_pipeline :: proc(self: ^Engine) -> (ok: bool) {
-    triangle_frag_shader := create_shader_module(
+    mesh_frag_shader := create_shader_module(
         self.vk_device,
-        #load("./../../shaders/compiled/tex_image.frag.spv"), // < new
-    ) or_return
-    defer vk.DestroyShaderModule(self.vk_device, triangle_frag_shader, nil)
+        // diff-remove
+        #load("./../shaders/compiled/colored_triangle.frag.spv")) or_return
+        // diff-add
+        #load("./../shaders/compiled/tex_image.frag.spv")) or_return
+    defer vk.DestroyShaderModule(self.vk_device, mesh_frag_shader, nil)
 
-    triangle_vertex_shader := create_shader_module(
+    mesh_vertex_shader := create_shader_module(
         self.vk_device,
-        #load("./../../shaders/compiled/colored_triangle_mesh.vert.spv"),
+        #load("./../shaders/compiled/colored_triangle_mesh.vert.spv"),
     ) or_return
-    defer vk.DestroyShaderModule(self.vk_device, triangle_vertex_shader, nil)
+    defer vk.DestroyShaderModule(self.vk_device, mesh_vertex_shader, nil)
 
     buffer_range := vk.PushConstantRange {
         offset     = 0,
@@ -482,17 +462,17 @@ engine_init_mesh_pipeline :: proc(self: ^Engine) -> (ok: bool) {
     pipeline_layout_info := pipeline_layout_create_info()
     pipeline_layout_info.pPushConstantRanges = &buffer_range
     pipeline_layout_info.pushConstantRangeCount = 1
-    pipeline_layout_info.pSetLayouts = &self.single_image_descriptor_layout // < new
-    pipeline_layout_info.setLayoutCount = 1 // < new
+    // diff-add-start
+    pipeline_layout_info.pSetLayouts = &self.single_image_descriptor_layout 
+    pipeline_layout_info.setLayoutCount = 1 
+    // diff-add-end
 
-    vk_check(
-        vk.CreatePipelineLayout(
-            self.vk_device,
-            &pipeline_layout_info,
-            nil,
-            &self.mesh_pipeline_layout,
-        ),
-    ) or_return
+    vk_check(vk.CreatePipelineLayout(
+        self.vk_device,
+        &pipeline_layout_info,
+        nil,
+        &self.mesh_pipeline_layout,
+    )) or_return
     deletion_queue_push(&self.main_deletion_queue, self.mesh_pipeline_layout)
 
     // Other code bellow ---
@@ -506,7 +486,7 @@ this pipeline, and use it to display textures we want to draw.
 
 This goes into the `engine_draw_geometry()` procedure, changing the draw for the monkey mesh.
 
-```odin
+```odin title="drawing.odin"
 engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool) {
     // ...
     frame := engine_get_current_frame(self) // Move this from bellow to the top
@@ -535,7 +515,8 @@ engine_draw_geometry :: proc(self: ^Engine, cmd: vk.CommandBuffer) -> (ok: bool)
         descriptor_writer_update_set(&writer, image_set)
     }
 
-    vk.CmdBindDescriptorSets(cmd, .GRAPHICS, self.mesh_pipeline_layout, 0, 1, &image_set, 0, nil)
+    vk.CmdBindDescriptorSets(
+        cmd, .GRAPHICS, self.mesh_pipeline_layout, 0, 1, &image_set, 0, nil)
 
     // Other code bellow ---
 

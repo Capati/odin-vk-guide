@@ -8,11 +8,14 @@ sidebar_label: "Mainloop Code"
 The first thing we need to do is to add the synchronization structures that we are going to
 need into our Frame_Data structure. We add the new members into the struct.
 
-```odin
+```odin title="engine.odin"
 Frame_Data :: struct {
-    swapchain_semaphore:   vk.Semaphore,
-    render_fence:          vk.Fence,
-    swapchain_image_index: u32,
+    command_pool:        vk.CommandPool,
+    main_command_buffer: vk.CommandBuffer,
+    // highlight-start
+    swapchain_semaphore: vk.Semaphore,
+    render_fence:        vk.Fence,
+    // highlight-end
 }
 ```
 
@@ -22,10 +25,10 @@ The `swapchain_semaphore` is going to be used so that our render commands wait o
 image request. `render_fence` will lets us wait for the draw commands of a given
 frame to be finished.
 
-Lets initialize them. Check the procedures to make a VkFenceCreateInfo and a
-VkSemaphoreCreateInfo on our initializers.odin code.
+Lets initialize them. Check the procedures to make a `vk.FenceCreateInfo` and a
+`vk.SemaphoreCreateInfo` on our `initializers.odin` code.
 
-```odin title="tutorial/01_initializing_vulkan/initializers.odin"
+```odin title="initializers.odin"
 fence_create_info :: proc(flags: vk.FenceCreateFlags = {}) -> vk.FenceCreateInfo {
     info := vk.FenceCreateInfo {
         sType = .FENCE_CREATE_INFO,
@@ -52,27 +55,22 @@ some flags. For more info on the structures, here are the spec links [VkFenceCre
 
 Lets write the actual creation now.
 
-```odin
+```odin title="engine.odin"
+@(require_results)
 engine_init_sync_structures :: proc(self: ^Engine) -> (ok: bool) {
-    // Create synchronization structures, one fence to control when the gpu has finished
-    // rendering the frame, and 2 semaphores to sincronize rendering with swapchain. We want
-    // the fence to start signalled so we can wait on it on the first frame
+    // Create synchronization structures, one fence to control when the gpu has
+    // finished rendering the frame, and a semaphore to synchronize rendering
+    // with swapchain. We want the fence to start signaled so we can wait on it
+    // on the first frame.
     fence_create_info := fence_create_info({.SIGNALED})
     semaphore_create_info := semaphore_create_info()
 
     for &frame in self.frames {
-          vk_check(
-            vk.CreateFence(self.vk_device, &fence_create_info, nil, &frame.render_fence),
-        ) or_return
+        vk_check(vk.CreateFence(
+            self.vk_device, &fence_create_info, nil, &frame.render_fence)) or_return
 
-        vk_check(
-            vk.CreateSemaphore(
-                self.vk_device,
-                &semaphore_create_info,
-                nil,
-                &frame.swapchain_semaphore,
-            ),
-        ) or_return
+        vk_check(vk.CreateSemaphore(
+            self.vk_device, &semaphore_create_info, nil, &frame.swapchain_semaphore)) or_return
     }
 
     return true
@@ -80,19 +78,29 @@ engine_init_sync_structures :: proc(self: ^Engine) -> (ok: bool) {
 ```
 
 On the fence, we are using the flag `{.SIGNALED}` (from `vk..FenceCreateInfo`) . This is very
-important, as it allows us to wait on a freshly created fence without causing errors. If we did
-not have that bit, when we call into WaitFences the first frame, before the gpu is doing work,
-the thread will be blocked.
+important, as it allows us to wait on a freshly created fence without causing errors. If we
+did not have that bit, when we call into `vk.WaitFences` the first frame, before the gpu is
+doing work, the thread will be blocked.
 
-We create the 3 structures for each of our frames. Now that we have them, we can write the draw
+We create the 2 structures for each of our frames. Now that we have them, we can write the draw
 loop.
 
 ## Draw loop
 
 Let's start the draw loop by first waiting for the GPU to have finished its work, using the fence.
 
-```odin
+```odin title="engine.odin"
+// Draw loop.
+@(require_results)
 engine_draw :: proc(self: ^Engine) -> (ok: bool) {
+    // Steps:
+    //
+    // 1. Waits for the GPU to finish the previous frame
+    // 2. Acquires the next swapchain image
+    // 3. Records rendering commands into a command buffer
+    // 4. Submits the command buffer to the GPU for execution
+    // 5. Presents the rendered image to the screen
+
     frame := engine_get_current_frame(self)
 
     // Wait until the gpu has finished rendering the last frame. Timeout of 1 second
@@ -113,16 +121,17 @@ executing the command or not.
 
 Next, we are going to request an image index from the swapchain.
 
-```odin
+```odin title="engine.odin"
 // Request image from the swapchain
+swapchain_image_index: u32 = ---
 vk_check(
     vk.AcquireNextImageKHR(
         self.vk_device,
         self.vk_swapchain,
-        1e9,
+        1000000000,
         frame.swapchain_semaphore,
         0,
-        &frame.swapchain_image_index,
+        &swapchain_image_index,
     ),
 ) or_return
 ```
@@ -131,8 +140,8 @@ vk_check(
 doesn't have any image we can use, it will block the thread with a maximum for the timeout set,
 which will be 1 second.
 
-Check how we are sending the swapchain_semaphore to it. This is to make sure that we can sync
-other operations with the swapchain having an image ready to render.
+Check how we are sending the `frame.swapchain_semaphore` to it. This is to make sure that we
+can sync other operations with the swapchain having an image ready to render.
 
 We use the index given from this procedure to decide which of the swapchain images we are going
 to use for drawing.
@@ -140,7 +149,7 @@ to use for drawing.
 Time to begin the rendering commands. For that, we are going to reset the command buffer for
 this frame, and begin it again. We will need to use another one of the initializer procedures.
 
-```odin title="tutorial/01_initializing_vulkan/initializers.odin"
+```odin title="initializers.odin"
 command_buffer_begin_info :: proc(
     flags: vk.CommandBufferUsageFlags = {},
 ) -> vk.CommandBufferBeginInfo {
@@ -161,7 +170,7 @@ Here is the link to the spec for this structure [VkCommandBufferBeginInfo][].
 
 Back to `engine_draw()`, we start by resetting the command buffer and restarting it.
 
-```odin
+```odin title="engine.odin"
 // The the current command buffer, naming it cmd for shorter writing
 cmd := frame.main_command_buffer
 
@@ -207,7 +216,7 @@ image and other command using that image for reading.
 
 Add the procedure to `images.odin` (create the file if need).
 
-```odin title="tutorial\01_initializing_vulkan\images.odin"
+```odin title="images.odin"
 package vk_guide
 
 // Vendor
@@ -273,7 +282,7 @@ part of the image with the barrier. Its most useful for things like array images
 images, where we would only need to barrier on a given layer or mipmap level. We are going to
 completely default it and have it transition all mipmap levels and layers.
 
-```odin
+```odin title="initializers.odin"
 image_subresource_range :: proc(aspectMask: vk.ImageAspectFlags) -> vk.ImageSubresourceRange {
     subImage := vk.ImageSubresourceRange {
         aspectMask = aspectMask,
@@ -296,13 +305,13 @@ performance if we are doing transitions or barriers for multiple things at once.
 
 With the transition procedure implemented, we can now draw things.
 
-```odin title="Import the 'core:math' package at the top"
+```odin title="engine.odin - Import the 'core:math' package at the top"
 import "core:math"
 ```
 
-```odin title="engine_draw"
+```odin title="engine.odin - engine_draw"
 // Make the swapchain image into writeable mode before rendering
-transition_image(cmd, self.swapchain_images[frame.swapchain_image_index], .UNDEFINED, .GENERAL)
+transition_image(cmd, self.swapchain_images[swapchain_image_index], .UNDEFINED, .GENERAL)
 
 // Make a clear-color from frame number. This will flash with a 120 frame period.
 flash := abs(math.sin(f32(self.frame_number) / 120.0))
@@ -315,7 +324,7 @@ clear_range := image_subresource_range({.COLOR})
 // Clear image
 vk.CmdClearColorImage(
     cmd,
-    self.swapchain_images[frame.swapchain_image_index],
+    self.swapchain_images[swapchain_image_index],
     .GENERAL,
     &clear_value,
     1,
@@ -325,7 +334,7 @@ vk.CmdClearColorImage(
 // Make the swapchain image into presentable mode
 transition_image(
     cmd,
-    self.swapchain_images[frame.swapchain_image_index],
+    self.swapchain_images[swapchain_image_index],
     .GENERAL,
     .PRESENT_SRC_KHR,
 )
@@ -376,7 +385,7 @@ enqueued as part of the submit.
 
 Lets check the procedures for those.
 
-```odin title="tutorial/01_initializing_vulkan/initializers.odin"
+```odin title="initializers.odin"
 semaphore_submit_info :: proc(
     stageMask: vk.PipelineStageFlags2,
     semaphore: vk.Semaphore,
@@ -436,7 +445,121 @@ Here are the links to spec for those structures:
 - [VkSemaphoreSubmitInfo](https://registry.khronos.org/vulkan/specs/1.3-extensions/html/chap6.html#VkSemaphoreSubmitInfo)
 - [VkSubmitInfo2](https://registry.khronos.org/vulkan/specs/1.3-extensions/html/chap6.html#VkSubmitInfo2)
 
-With the initializers made, we can write the submit itself.
+Before we can write the submit, we need one more sync structure: a semaphore per swapchain
+image, rather than per frame-in-flight.
+
+:::info[]
+
+Each swapchain image needs its own dedicated semaphore. Since a given image can't be
+re-acquired until the presentation engine is done with the *previous* present of that same
+image.
+
+:::
+
+It's tempting to reuse the frame's own `swapchain_semaphore` and a matching `render_semaphore`
+for the whole submit-and-present sequence, but that runs into a subtle problem caused by the
+difference between how many frames we keep in flight and how many images the swapchain
+actually has.
+
+We're double-buffering our CPU-side work with `FRAME_OVERLAP = 2`, but the swapchain itself may
+have three (or more) images, and there's no guaranteed relationship between "which frame slot
+we're on" and "which swapchain image we just acquired." `vk.AcquireNextImageKHR` hands back
+whatever image the presentation engine has ready, in whatever order it likes, so acquiring the
+same image twice in a row, or seeing image indices come back out of the neat 0,1,0,1 pattern
+you might expect, is completely legal.
+
+That matters because a semaphore signaled by `vk.QueueSubmit2` and waited on by
+`vk.QueuePresentKHR` must be unsignaled at the moment it's signaled again. If we signal a
+single per-frame semaphore for "rendering finished, ready to present," and that same frame
+slot comes around again before the *previous* present of that semaphore has actually been
+consumed by the presentation engine, we'd be trying to signal a semaphore that might still be
+in use. The validation layers catch this exact case:
+
+
+```text
+vkQueueSubmit2(): pSubmits[0].pSignalSemaphoreInfos[0].semaphore ... is being signaled by
+VkQueue ..., but it may still be in use by VkSwapchainKHR ...
+Swapchain image 1 was presented but was not re-acquired, so VkSemaphore ... may still be in
+use and cannot be safely reused with image index 2.
+(VUID-vkQueueSubmit2-semaphore-03868)
+```
+
+The fix is to stop associating this "ready to present" semaphore with the frame, and instead
+give every swapchain image its own dedicated semaphore. Since a given image can't be
+re-acquired until the presentation engine is done with the previous present of that same image,
+indexing the semaphore by `swapchain_image_index` guarantees it's always safe to signal again
+by the time we come back around to that image.
+
+```odin title="engine.odin"
+Engine :: struct {
+    // ...
+
+    // Swapchain
+    vk_swapchain:               vk.SwapchainKHR,
+    swapchain_format:           vk.Format,
+    swapchain_extent:           vk.Extent2D,
+    swapchain_images:           []vk.Image,
+    swapchain_image_views:      []vk.ImageView,
+    // highlight-next-line
+    swapchain_image_semaphores: []vk.Semaphore,
+}
+```
+
+We allocate one semaphore per swapchain image, and create them right after we know how many
+images the swapchain has:
+
+```odin title="engine.odin"
+engine_create_swapchain :: proc(self: ^Engine, extent: vk.Extent2D) -> (ok: bool) {
+    // ...
+
+    // Give every swapchain image its own dedicated semaphore.
+    //
+    // Since a given image can't be re-acquired until the presentation engine is
+    // done with the previous present of that same image
+    self.swapchain_image_semaphores = make([]vk.Semaphore, len(self.swapchain_images))[:]
+    defer if !ok {delete(self.swapchain_image_semaphores)}
+
+    // These need to be created here so that they are recreated when we resize.
+    semaphore_create_info := semaphore_create_info()
+    for &semaphore in self.swapchain_image_semaphores {
+        vk_check(vk.CreateSemaphore(
+            self.vk_device, &semaphore_create_info, nil, &semaphore)) or_return
+    }
+
+    return true
+}
+```
+
+This has to live in `engine_create_swapchain` rather than in `engine_init_sync_structures`,
+because the number of swapchain images can change whenever we recreate the swapchain (for
+example on window resize), so the semaphore array needs to be resized right alongside it.
+
+Tearing them down is symmetric, and lives in `engine_destroy_swapchain`:
+
+These are destroyed in `engine_destroy_swapchain`:
+
+```odin title="engine.odin"
+engine_destroy_swapchain :: proc(self: ^Engine) {
+    vkb.destroy_swapchain(&self.vkb.swapchain)
+    vkb.swapchain_destroy_image_views(self.vkb.swapchain, self.swapchain_image_views)
+
+    for semaphore in self.swapchain_image_semaphores {
+        vk.DestroySemaphore(self.vk_device, semaphore, nil)
+    }
+
+    delete(self.swapchain_image_semaphores)
+    delete(self.swapchain_image_views)
+    delete(self.swapchain_images)
+}
+```
+
+With this in place, the per-frame `swapchain_semaphore` keeps doing its original job, signaled
+by `vk.AcquireNextImageKHR`, waited on by our submit, so rendering doesn't start before the
+image is actually available, while this new per-image semaphore takes over the job of
+signaling "rendering finished" and being waited on by present. That split is what lets us
+safely decouple frame-in-flight bookkeeping from swapchain image reuse.
+
+With that done, we can write the submit itself.
 
 ```odin
 // Prepare the submission to the queue. we want to wait on the
@@ -444,7 +567,7 @@ With the initializers made, we can write the submit itself.
 // ready. We will signal the `ready_for_present_semaphore`, to signal that
 // rendering has finished.
 
-ready_for_present_semaphore := self.swapchain_image_semaphores[frame.swapchain_image_index]
+ready_for_present_semaphore := self.swapchain_image_semaphores[swapchain_image_index]
 
 cmd_info := command_buffer_submit_info(cmd)
 signal_info := semaphore_submit_info({.ALL_GRAPHICS}, ready_for_present_semaphore)
@@ -458,18 +581,21 @@ vk_check(vk.QueueSubmit2(self.graphics_queue, 1, &submit, frame.render_fence)) o
 ```
 
 We first create each of the different info structs needed, and then we call `vk.QueueSubmit2`.
-For our command info we are just going to send the command we just recorded. For the wait info,
-we are going to use the swapchain semaphore of the current frame. When we called
-`vk.AcquireNextImageKHR`, we set this same semaphore to be signaled, so with this, we make sure
-that the commands executed here wont begin until the swapchain image is ready.
+For our command info we are just going to send the command we just recorded. For the wait
+info, we are going to use the swapchain semaphore of the current frame. When we called
+`vk.AcquireNextImageKHR`, we set this same semaphore to be signaled, so with this, we make
+sure that the commands executed here wont begin until the swapchain image is ready.
 
-For signal info, we will be using the semaphore of the current swapchain image, which will lets us
-synchronize with presenting the image on the screen.
+For signal info, we will be using the semaphore belonging to the swapchain image we just
+acquired, indexed by `swapchain_image_index`, not by frame, which will let us synchronize
+with presenting that image on the screen. Indexing by image rather than by frame-in-flight is
+what avoids reusing a semaphore that the presentation engine might still be holding onto from
+a previous present of that same image.
 
 And for the fence, we are going to use the current frame render_fence. At the start of the draw
-loop, we waited for that same fence to be ready. This is how we are going to synchronize our gpu
-to the cpu, as when the cpu goes ahead of the GPU, the fence will stop us so we don't use any of
-the other structures from this frame until the draw commands are executed.
+loop, we waited for that same fence to be ready. This is how we are going to synchronize our
+gpu to the cpu, as when the cpu goes ahead of the GPU, the fence will stop us so we don't use
+any of the other structures from this frame until the draw commands are executed.
 
 Last thing we need on the frame is to present the image we have just drawn into the screen
 
@@ -485,7 +611,7 @@ present_info := vk.PresentInfoKHR {
     swapchainCount     = 1,
     pWaitSemaphores    = &ready_for_present_semaphore,
     waitSemaphoreCount = 1,
-    pImageIndices      = &frame.swapchain_image_index,
+    pImageIndices      = &swapchain_image_index,
 }
 
 vk_check(vk.QueuePresentKHR(self.graphics_queue, &present_info)) or_return
@@ -496,8 +622,9 @@ self.frame_number += 1
 
 `vk.QueuePresent` has a very similar info struct as the queue submit. It also has the pointers
 for the semaphores, but it has image index and swapchain index. We will wait on the
-ready_for_present_semaphore, and connect it to our swapchain. This way, we wont be presenting the image to
-the screen until it has finished the rendering commands from the submit right before it.
+ready_for_present_semaphore, and connect it to our swapchain. This way, we wont be presenting
+the image to the screen until it has finished the rendering commands from the submit right
+before it.
 
 At the end of the procedure, we increment frame counter.
 

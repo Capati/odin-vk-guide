@@ -18,9 +18,7 @@ do not require frequent changes.
 1. Move the following procedures to a new file called `init.odin`:
 
     - `engine_init`
-    - `engine_cleanup`
     - `engine_init_vulkan`
-    - `default_debug_callback`
     - `engine_create_swapchain`
     - `engine_resize_swapchain`
     - `engine_destroy_swapchain`
@@ -33,6 +31,7 @@ do not require frequent changes.
     - `engine_init_pipelines`
     - `engine_init_imgui`
     - `engine_init_default_data`
+    - `engine_cleanup`
 
 2. Create a file called `drawing.odin` and move the draw procedures:
 
@@ -45,7 +44,7 @@ do not require frequent changes.
 
 3. Move `engine_immediate_submit` to `core.odin`.
 
-Now, our `engine.odin` file contains only the `Engine` related structures and the
-`engine_begin` procedure. Although the changes are minimal, this reorganization can help keep
-our project more manageable. Make sure to review the final codebase to see how the project is
-structured before continue.
+Now, our `engine.odin` file contains only the `Engine` related structures, the `engine_run`
+and `engine_ui_definition` procedures. Although the changes are minimal, this reorganization
+can help keep our project more manageable. Make sure to review the final codebase to see how
+the project is structured before continue.

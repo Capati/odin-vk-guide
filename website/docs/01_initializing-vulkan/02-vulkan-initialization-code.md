@@ -16,7 +16,7 @@ The first thing to do, is to `import` the `odin-vk-bootstrap` library that we wi
 simplify the initialization code. For that, go to the top of `engine.main`, and just import the
 `odin-vk-bootstrap` package from the `libs` folder:
 
-```odin
+```odin title="engine.odin"
 // --- other imports ---
 
 // Vendor
@@ -35,38 +35,47 @@ vkbootstrap, you can try reading the first chapter of vulkan-tutorial
 The first thing we are need to initialize is the Vulkan instance. For that, let's start by
 adding the stored handles to the `Engine` object:
 
-```odin
+```odin title="engine.odin"
 Engine :: struct {
-    vk_instance:         vk.Instance,
-    vk_physical_device:  vk.PhysicalDevice,
-    vk_surface:          vk.SurfaceKHR,
-    vk_device:           vk.Device,
-    vkb:                   struct {
-        instance:        ^vkb.Instance,
-        physical_device: ^vkb.Physical_Device,
-        device:          ^vkb.Device,
+    // ...
+
+    // GPU Context
+    vk_instance:        vk.Instance,
+    vk_physical_device: vk.PhysicalDevice,
+    vk_surface:         vk.SurfaceKHR,
+    vk_device:          vk.Device,
+
+    // vk-bootstrap
+    vkb:                struct {
+        instance:        vkb.Instance,
+        physical_device: vkb.Physical_Device,
+        device:          vkb.Device,
+        swapchain:       vkb.Swapchain,
     },
 }
 ```
 
-We have added 3 handles, `vk.Instance`, `vk.PhysicalDevice`, `vk.SurfaceKHR` and `vk.Device`.
-We are also storing the `vkb` (`vk.Bootstrap`) handles.
+We have added 4 handles, `vk.Instance`, `vk.PhysicalDevice`, `vk.SurfaceKHR` and `vk.Device`.
+We are also storing the `vkb` handles.
 
 Now lets also add some extra procedures to the engine file for the different stages of
 initialization. We will call those init procedures in order from our `engine_init` procedure.
 
-```odin
+```odin title="engine.odin"
 // Initializes everything in the engine.
 engine_init :: proc(self: ^Engine) -> (ok: bool) {
     // Other code ---
 
+    // Set window callbacks
+    glfw.SetFramebufferSizeCallback(self.window, callback_framebuffer_size)
+    glfw.SetWindowIconifyCallback(self.window, callback_window_minimize)
+
+    // highlight-start
     engine_init_vulkan(self) or_return
-
     engine_init_swapchain(self) or_return
-
     engine_init_commands(self) or_return
-
     engine_init_sync_structures(self) or_return
+    // highlight-end
 
     // Everything went fine
     self.is_initialized = true
@@ -100,15 +109,18 @@ needed to create the instance.
 import "base:runtime" // import at the top
 
 engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
-    // Make the vulkan instance, with basic debug features
-    instance_builder := vkb.init_instance_builder() or_return
-    defer vkb.destroy_instance_builder(&instance_builder)
+    ta := context.temp_allocator
+    runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 
-    vkb.instance_set_app_name(&instance_builder, "Example Vulkan Application")
-    vkb.instance_require_api_version(&instance_builder, vk.API_VERSION_1_3)
+    // Make the vulkan instance, with basic debug features
+    instance_builder: vkb.Instance_Builder
+    vkb.instance_builder_init(&instance_builder, ta)
+
+    vkb.instance_builder_set_app_name(&instance_builder, "Example Vulkan Application")
+    vkb.instance_builder_require_api_version(&instance_builder, vk.API_VERSION_1_3)
 
     when ODIN_DEBUG {
-        vkb.instance_request_validation_layers(&instance_builder)
+        vkb.instance_builder_request_validation_layers(&instance_builder)
 
         default_debug_callback :: proc "system" (
             message_severity: vk.DebugUtilsMessageSeverityFlagsEXT,
@@ -131,23 +143,54 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
             return false // Applications must return false here
         }
 
-        vkb.instance_set_debug_callback(&instance_builder, default_debug_callback)
-        vkb.instance_set_debug_callback_user_data_pointer(&instance_builder, self)
+        vkb.instance_builder_set_debug_callback(&instance_builder, default_debug_callback)
+        vkb.instance_builder_set_debug_callback_user_data_pointer(&instance_builder, self)
+
+        VK_LAYER_LUNARG_MONITOR :: "VK_LAYER_LUNARG_monitor"
+
+        info: vkb.System_Info
+        info_err := vkb.system_info_init(&info, allocator = ta)
+        if info_err != nil {
+            log.errorf("Failed to get system info: %#v", info_err)
+            return
+        }
+
+        if vkb.system_info_is_layer_available(info, VK_LAYER_LUNARG_MONITOR) {
+            // Displays FPS in the application's title bar. It is only compatible
+            // with the Win32 and XCB windowing systems.
+            // https://vulkan.lunarg.com/doc/sdk/latest/windows/monitor_layer.html
+            when ODIN_OS == .Windows || ODIN_OS == .Linux {
+                vkb.instance_builder_enable_layer(&instance_builder, VK_LAYER_LUNARG_MONITOR)
+            }
+        }
     }
 
     // Grab the instance
-    self.vkb.instance = vkb.build_instance(&instance_builder) or_return
-    self.vk_instance = self.vkb.instance.handle
-    defer if !ok {
-        vkb.destroy_instance(self.vkb.instance)
+    vkb_instance_err := vkb.instance_builder_build(&instance_builder, &self.vkb.instance)
+    if vkb_instance_err != nil {
+        log.errorf("Failed to build instance: %#v", vkb_instance_err)
+        return
     }
+    defer if !ok {
+        vkb.destroy_instance(&self.vkb.instance)
+    }
+
+    self.vk_instance = self.vkb.instance.vk_instance
 
     return true
 }
 ```
 
-We are going to create a `vkb.Instance_Builder`, which is from the `vkb` package, and abstracts
+We are going to create a `vkb.InstanceBuilder`, which is from the `vkb` package, and abstracts
 the creation of a Vulkan `vk.Instance`.
+
+:::info[Temporary allocator]
+
+We use `context.temp_allocator` for temporary `vkb` builders that do not need to outlive the
+current procedure. `DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD` ensures that any temporary allocations
+made within the procedure are automatically freed when the scope exits.
+
+:::
 
 For the creation of the instance, we want it to have the name "Example Vulkan Application",
 have validation layers enabled, and use default debug logger. The "Example Vulkan Application"
@@ -167,11 +210,11 @@ relatively modern. We will be taking advantage of the features given by that vul
 you are on a old PC/gpu that does not support those features, then you will have to follow the
 older version of this guide, which targets 1.1.
 
-Lastly, inside `ODIN_DEBUG`, we configures Vulkan debugging features:
+Lastly, inside `ODIN_DEBUG`, we configure Vulkan debugging features:
 
 1. **Validation Layers**
 
-    - `vkb.instance_request_validation_layers` enables Vulkan validation layers
+    - `vkb.instance_builder_request_validation_layers` enables Vulkan validation layers
     - These layers perform runtime checks on Vulkan API usage, catching errors and potential issues
 
 2. **Debug Messenger Callback**
@@ -185,15 +228,15 @@ Lastly, inside `ODIN_DEBUG`, we configures Vulkan debugging features:
         - Other (typically `.INFO` or `.VERBOSE`): Logs using `log.infof`
     - Logs include message type and content from `p_callback_data.pMessage`
     - Configured via:
-        - `vkb.instance_set_debug_callback`: Sets our callback procedure
-        - `vkb.instance_set_debug_callback_user_data_pointer`: Passes `self` (our engine) as
-          user data
+        - `vkb.instance_builder_set_debug_callback`: Sets our callback procedure
+        - `vkb.instance_builder_set_debug_callback_user_data_pointer`: Passes `self`
+          (our engine) as user data
     - Returns `false` as required by Vulkan specification for debug callbacks
 
-Next, we retrieve the `vk.Instance` handle from the `vkb.Instance` object and store both the
-handle and the `vkb` object in our `Engine` structure.
+Next, we retrieve the `vk.Instance` handle from the `vkb.Instance` and store it in our `Engine`
+structure.
 
-## Device
+## Physical Device
 
 ```odin title="engine.odin"
 engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
@@ -204,7 +247,12 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
         glfw.CreateWindowSurface(self.vk_instance, self.window, nil, &self.vk_surface),
     ) or_return
     defer if !ok {
-        vkb.destroy_surface(self.vkb.instance, self.vk_surface)
+        vkb.destroy_surface(&self.vkb.instance, self.vk_surface)
+    }
+
+    // Vulkan 1.1 features
+    features_11 := vk.PhysicalDeviceVulkan11Features {
+        shaderDrawParameters = true,
     }
 
     // Vulkan 1.2 features
@@ -226,29 +274,42 @@ engine_init_vulkan :: proc(self: ^Engine) -> (ok: bool) {
     // Use vk-bootstrap to select a gpu.
     // We want a gpu that can write to the GLFW surface and supports vulkan 1.3
     // with the correct features
-    selector := vkb.init_physical_device_selector(self.vkb.instance) or_return
-    defer vkb.destroy_physical_device_selector(&selector)
+    selector: vkb.Physical_Device_Selector
+    vkb.physical_device_selector_init(&selector, self.vkb.instance, ta)
 
-    vkb.selector_set_minimum_version(&selector, vk.API_VERSION_1_3)
-    vkb.selector_set_required_features_13(&selector, features_13)
-    vkb.selector_set_required_features_12(&selector, features_12)
-    vkb.selector_set_surface(&selector, self.vk_surface)
+    vkb.physical_device_selector_set_minimum_version(&selector, vk.API_VERSION_1_3)
+    vkb.physical_device_selector_set_required_features_13(&selector, features_13)
+    vkb.physical_device_selector_set_required_features_12(&selector, features_12)
+    vkb.physical_device_selector_set_required_features_11(&selector, features_11)
+    vkb.physical_device_selector_set_surface(&selector, self.vk_surface)
 
-    self.vkb.physical_device = vkb.select_physical_device(&selector) or_return
-    self.vk_physical_device = self.vkb.physical_device.handle
-    defer if !ok {
-        vkb.destroy_physical_device(self.vkb.physical_device)
+    vkb_physical_device_err := vkb.physical_device_selector_select(
+        &selector, &self.vkb.physical_device)
+    if vkb_physical_device_err != nil {
+        log.errorf("Failed to select physical device: %#v", vkb_physical_device_err)
+        return
     }
+    defer if !ok {
+        vkb.destroy_physical_device(&self.vkb.physical_device)
+    }
+
+    self.vk_physical_device = self.vkb.physical_device.vk_physical_device
 
     // Create the final vulkan device
-    device_builder := vkb.init_device_builder(self.vkb.physical_device) or_return
-    defer vkb.destroy_device_builder(&device_builder)
+    device_builder: vkb.Device_Builder
+    vkb.device_builder_init(&device_builder, ta)
 
-    self.vkb.device = vkb.build_device(&device_builder) or_return
-    self.vk_device = self.vkb.device.handle
-    defer if !ok {
-        vkb.destroy_device(self.vkb.device)
+    vkb_device_err := vkb.device_builder_build(
+        &device_builder, &self.vkb.physical_device, &self.vkb.device)
+    if vkb_device_err != nil {
+        log.errorf("Failed to get logical device: %#v", vkb_device_err)
+        return
     }
+    defer if !ok {
+        vkb.destroy_device(&self.vkb.device)
+    }
+
+    self.vk_device = self.vkb.device.vk_device
 
     return true
 }
@@ -309,19 +370,14 @@ Begin by adding new fields and procedures.
 
 ```odin title="engine.odin"
 Engine :: struct {
-    // --- other code ---
+    // ...
 
     // Swapchain
     vk_swapchain:          vk.SwapchainKHR,
-    swapchain_extent:      vk.Extent2D,
     swapchain_format:      vk.Format,
+    swapchain_extent:      vk.Extent2D,
     swapchain_images:      []vk.Image,
     swapchain_image_views: []vk.ImageView,
-
-    vkb: struct {
-        //...
-        swapchain: ^vkb.Swapchain,
-    },
 }
 
 engine_create_swapchain :: proc(self: ^Engine, extent: vk.Extent2D) -> (ok: bool) {
@@ -348,25 +404,45 @@ a swapchain. It uses a builder similar to the ones we used for instance and devi
 
 ```odin title="engine.odin"
 engine_create_swapchain :: proc(self: ^Engine, extent: vk.Extent2D) -> (ok: bool) {
+    ta := context.temp_allocator
+    runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
+
     self.swapchain_format = .B8G8R8A8_UNORM
 
-    builder := vkb.init_swapchain_builder(self.vkb.device) or_return
-    defer vkb.destroy_swapchain_builder(&builder)
+    builder: vkb.Swapchain_Builder
+    vkb.swapchain_builder_init(&builder, self.vkb.device, ta)
 
-    vkb.swapchain_builder_set_desired_format(
-        &builder,
+    vkb.swapchain_builder_set_desired_format(&builder,
         {format = self.swapchain_format, colorSpace = .SRGB_NONLINEAR},
     )
-    vkb.swapchain_builder_set_present_mode(&builder, .FIFO)
+    vkb.swapchain_builder_set_desired_present_mode(&builder, .FIFO)
     vkb.swapchain_builder_set_desired_extent(&builder, extent.width, extent.height)
     vkb.swapchain_builder_add_image_usage_flags(&builder, {.TRANSFER_DST})
 
-    self.vkb.swapchain = vkb.build_swapchain(&builder) or_return
-    self.vk_swapchain = self.vkb.swapchain.handle
-    self.swapchain_extent = self.vkb.swapchain.extent
+    swapchain_err := vkb.swapchain_builder_build(&builder, &self.vkb.swapchain)
+    if swapchain_err != nil {
+        log.errorf("Failed to build swapchain: %#v", swapchain_err)
+        return
+    }
 
-    self.swapchain_images = vkb.swapchain_get_images(self.vkb.swapchain) or_return
-    self.swapchain_image_views = vkb.swapchain_get_image_views(self.vkb.swapchain) or_return
+    self.vk_swapchain = self.vkb.swapchain.vk_swapchain
+    self.swapchain_extent = self.vkb.swapchain.vk_extent
+
+    swapchain_images, swapchain_images_err :=
+        vkb.swapchain_get_images(self.vkb.swapchain)
+    if swapchain_images_err != nil {
+        log.errorf("Failed to get swapchain images: %#v", swapchain_images_err)
+        return
+    }
+    swapchain_image_views, swapchain_image_views_err :=
+        vkb.swapchain_get_image_views(self.vkb.swapchain)
+    if swapchain_image_views_err != nil {
+        log.errorf("Failed to get swapchain image views: %#v", swapchain_image_views_err)
+        return
+    }
+
+    self.swapchain_images = swapchain_images
+    self.swapchain_image_views = swapchain_image_views
 
     return true
 }
@@ -397,7 +473,7 @@ Lets write the `engine_destroy_swapchain()` procedure too.
 ```odin title="engine.odin"
 engine_destroy_swapchain :: proc(self: ^Engine) {
     vkb.swapchain_destroy_image_views(self.vkb.swapchain, self.swapchain_image_views)
-    vkb.destroy_swapchain(self.vkb.swapchain)
+    vkb.destroy_swapchain(&self.vkb.swapchain)
     delete(self.swapchain_image_views)
     delete(self.swapchain_images)
 }
@@ -423,10 +499,10 @@ engine_cleanup :: proc(self: ^Engine) {
     engine_destroy_swapchain(self)
 
     vk.DestroySurfaceKHR(self.vk_instance, self.vk_surface, nil)
-    vkb.destroy_device(self.vkb.device)
+    vkb.destroy_device(&self.vkb.device)
 
-    vkb.destroy_physical_device(self.vkb.physical_device)
-    vkb.destroy_instance(self.vkb.instance)
+    vkb.destroy_physical_device(&self.vkb.physical_device)
+    vkb.destroy_instance(&self.vkb.instance)
 
     destroy_window(self.window)
 }

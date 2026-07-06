@@ -1,9 +1,9 @@
 ---
 sidebar_position: 1
-sidebar_label: "The graphics pipeline"
+sidebar_label: "The Graphics Pipeline"
 ---
 
-# The graphics pipeline
+# The Graphics Pipeline
 
 At this point, we have a draw loop and we have a way to draw into image using compute shader,
 but we cant render geometry yet. To render geometry, we  need to setup a graphics pipeline that

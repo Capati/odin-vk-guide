@@ -10,12 +10,6 @@ import vk "vendor:vulkan"
 import "libs:vma"
 
 Resource :: union {
-    // Higher-level custom resources
-    Descriptor_Allocator_Growable,
-    Allocated_Buffer,
-    Allocated_Image,
-    Metallic_Roughness,
-
     // Cleanup procedures
     proc "c" (),
 
@@ -44,6 +38,18 @@ Resource :: union {
 
     // Memory allocator
     vma.Allocator,
+
+    // Higher-level custom resources
+    Allocated_Image,
+
+    // Higher-level custom resources
+    Allocated_Buffer,
+
+    // Higher-level custom resources
+    Descriptor_Allocator_Growable,
+
+    // Higher-level custom resources
+    Metallic_Roughness,
 }
 
 Deletion_Queue :: struct {
@@ -92,19 +98,9 @@ deletion_queue_flush :: proc(self: ^Deletion_Queue) {
     // Process resources in reverse order (LIFO)
     #reverse for &resource in self.resources {
         switch &res in resource {
-        // Higher-level custom resources
-        case Descriptor_Allocator_Growable:
-            descriptor_growable_destroy_pools(res)
-        case Allocated_Buffer:
-            destroy_buffer(res)
-        case Allocated_Image:
-            destroy_image(res)
-        case Metallic_Roughness:
-            metallic_roughness_clear_resources(res)
-
         // Cleanup procedures
         case proc "c" ():
-            res()
+          res()
 
         // Pipeline objects
         case vk.Pipeline:
@@ -142,7 +138,23 @@ deletion_queue_flush :: proc(self: ^Deletion_Queue) {
 
         // Memory allocator
         case vma.Allocator:
-            vma.destroy_allocator(res)
+            vma.DestroyAllocator(res)
+
+        // Higher-level custom resources
+        case Allocated_Image:
+            destroy_image(res)
+
+        // Higher-level custom resources
+        case Allocated_Buffer:
+            destroy_buffer(res)
+
+        // Higher-level custom resources
+        case Descriptor_Allocator_Growable:
+            descriptor_growable_destroy_pools(res)
+
+        // Higher-level custom resources
+        case Metallic_Roughness:
+            metallic_roughness_clear_resources(res)
         }
     }
 

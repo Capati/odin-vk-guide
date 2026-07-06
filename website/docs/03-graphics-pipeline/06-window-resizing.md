@@ -36,20 +36,21 @@ we see that error, and rebuild the swapchain when that happens.
 On the `engine_draw()` procedure, replace the call to `vk.AcquireNextImageKHR` to check the
 error code.
 
-```odin
+```odin title="engine.odin"
 // Request image from the swapchain
+swapchain_image_index: u32 = ---
 result := vk.AcquireNextImageKHR(
-  self.vk_device,
-  self.vk_swapchain,
-  max(u64),
-  frame.swapchain_semaphore,
-  0,
-  &frame.swapchain_image_index,
+    self.vk_device,
+    self.vk_swapchain,
+    1e9,
+    frame.swapchain_semaphore,
+    0,
+    &swapchain_image_index,
 )
 
 // Just ignore these errors.
 if result != .ERROR_OUT_OF_DATE_KHR && result != .SUBOPTIMAL_KHR {
-  vk_check(result) or_return
+    vk_check(result) or_return
 }
 ```
 
@@ -61,26 +62,26 @@ Here, we resize the swapchain if we get the `.ERROR_OUT_OF_DATE_KHR` or `.SUBOPT
 Note that we should only do this after calling `vk.QueuePresentKHR`. Otherwise, we run the
 risk of semaphores never getting signalled.
 
-```odin
-result := vk.QueuePresentKHR(self.graphics_queue, &present_info)
+```odin title="engine.odin"
+result = vk.QueuePresentKHR(self.graphics_queue, &present_info)
 
 if result == .ERROR_OUT_OF_DATE_KHR || result == .SUBOPTIMAL_KHR {
-  engine_resize_swapchain(self) or_return
+    engine_resize_swapchain(self) or_return
 } else {
-  vk_check(result) or_return
+    vk_check(result) or_return
 }
 ```
 
 Lets add a `engine_resize_swapchain()` procedure to re-create the swapchain.
 
-```odin
+```odin title="engine.odin"
 engine_resize_swapchain :: proc(self: ^Engine) -> (ok: bool) {
     vk_check(vk.DeviceWaitIdle(self.vk_device)) or_return
 
     width, height := glfw.GetFramebufferSize(self.window)
     self.window_extent = {u32(width), u32(height)}
 
-    engine_create_swapchain(self, self.window_extent.width, self.window_extent.height) or_return
+    engine_create_swapchain(self, self.window_extent) or_return
 
     return true
 }
@@ -95,35 +96,31 @@ When recreating a swapchain in Vulkan and setting the `oldSwapchain` parameter, 
 the system to handle the transition from the old to the new swapchain more efficiently. This is
 especially helpful when the window is resized or the surface properties change.
 
-```odin
+```odin title="engine.odin"
 engine_create_swapchain :: proc(self: ^Engine, width, height: u32) -> (ok: bool) {
-    vkb.swapchain_builder_add_image_usage_flags(&builder, {.TRANSFER_DST})
+    // ...
 
-    // Other code above ---
-
-    // If an existing swapchain is present,link it as the old swapchain
-    if self.vkb.swapchain != nil {
+    // If an existing swapchain is present, link it as the old swapchain
+    if self.vkb.swapchain.vk_swapchain != {} {
         vkb.swapchain_builder_set_old_swapchain(&builder, self.vkb.swapchain)
     }
 
-    // Build the new swapchain using the configured builder
-    swapchain := vkb.build_swapchain(&builder) or_return
+    vkb_swapchain: vkb.Swapchain
+    swapchain_err := vkb.swapchain_builder_build(&builder, &vkb_swapchain)
+    if swapchain_err != nil {
+        log.errorf("Failed to build swapchain: %#v", swapchain_err)
+        return
+    }
 
-    // If there was an old swapchain, destroy it after the new one is created
-    if self.vkb.swapchain != nil {
+    // If there was an old swapchain, destroy it after the new one is set
+    if self.vkb.swapchain.vk_swapchain != {} {
         engine_destroy_swapchain(self)
     }
 
-    // Update engine state with new swapchain
-    self.vkb.swapchain = swapchain
-    self.vk_swapchain = swapchain.handle
-    self.swapchain_extent = swapchain.extent
+    self.vkb.swapchain = vkb_swapchain
+    self.vk_swapchain = self.vkb.swapchain.vk_swapchain
 
-    // Retrieve and store the swapchain’s images and image views
-    self.swapchain_images = vkb.swapchain_get_images(self.vkb.swapchain) or_return
-    self.swapchain_image_views = vkb.swapchain_get_image_views(self.vkb.swapchain) or_return
-
-    return true
+    // ...
 }
 ```
 
@@ -137,15 +134,24 @@ a _drawExtent variable and making sure that it gets maxed at the size of the dra
 
 Add `render_scale` float to `Engine` structure that we will use for dynamic resolution.
 
-```odin
-draw_extent:  vk.Extent2D,
-// Other code above ---
-render_scale: f32,
+```odin title="engine.odin"
+Engine :: struct {
+    // ...
+
+    // Rendering resources
+    draw_image:               Allocated_Image,
+    depth_image:              Allocated_Image,
+    draw_extent:              vk.Extent2D,
+    // diff-add
+    render_scale:             f32,
+    gradient_pipeline_layout: vk.PipelineLayout,
+    // ...
+}
 ```
 
 Set the `render_scale` default value to `1.0` in the `engine_init` procedure.
 
-```odin
+```odin title="engine.odin"
 engine_init :: proc(self: ^Engine) -> (ok: bool) {
     ensure(self != nil, "Invalid 'Engine' object")
 
@@ -153,7 +159,8 @@ engine_init :: proc(self: ^Engine) -> (ok: bool) {
     g_logger = context.logger
 
     self.window_extent = DEFAULT_WINDOW_EXTENT
-    self.render_scale = 1.0 // < here
+    // highlight-next-line
+    self.render_scale = 1.0
 
     // Other code ---
 }
@@ -162,29 +169,36 @@ engine_init :: proc(self: ^Engine) -> (ok: bool) {
 Back to the `engine_draw()` procedure, we calculate the draw extent at the start of it, instead
 of using the draw image extent for it.
 
-```odin
+```odin title="engine.odin"
+// diff-remove-start
+self.draw_extent.width = self.draw_image.image_extent.width
+self.draw_extent.height = self.draw_image.image_extent.height
+// diff-remove-end
+
+// diff-add-start
 self.draw_extent = {
     width  = u32(
-        f32(min(self.swapchain_extent.width, self.draw_image.image_extent.width)) *
-        self.render_scale,
+        f32(min(self.swapchain_extent.width,
+            self.draw_image.image_extent.width)) * self.render_scale,
     ),
     height = u32(
-        f32(min(self.swapchain_extent.height, self.draw_image.image_extent.height)) *
-        self.render_scale,
+        f32(min(self.swapchain_extent.height,
+            self.draw_image.image_extent.height)) * self.render_scale,
     ),
 }
+// diff-add-end
 ```
 
 Now we are going to add a slider to imgui to control this draw scale parameter.
 
-In the `engine_run()` procedure, inside the imgui window that calculates background parameters,
-add this to the top
+In the `engine_ui_definition()` procedure, inside the imgui window that calculates background
+parameters, add this to the top
 
-```odin
+```odin title="engine.odin"
 if im.begin("Background", nil, {.Always_Auto_Resize}) {
-    im.slider_float("Render scale", &self.render_scale, 0.3, 1.0)
+    im.SliderFloat("Render scale", &self.render_scale, 0.3, 1.0)
 
-    // Other code bellow ---
+    // ...
 }
 ```
 
