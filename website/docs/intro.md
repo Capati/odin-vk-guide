@@ -11,9 +11,16 @@ End stage after the tutorial
 
 :::info[Odin VK Guide]
 
-This page presents an adaptation of the [Odin programming language](https://odin-lang.org/?utm_source=chatgpt.com) version of the [vkguide.dev tutorial](https://vkguide.dev/?utm_source=chatgpt.com). Full credit goes to the original authors.
+An [Odin programming language](https://odin-lang.org/?utm_source=chatgpt.com) port of the
+[vkguide.dev tutorial](https://vkguide.dev/?utm_source=chatgpt.com). **Full credit goes to the
+original authors**. However, this is not a direct copy of the original tutorial. It includes
+many editing changes, bug fixes, clarifications, and additional sections.
 
-This is not a direct copy of the original tutorial. It includes many editing changes, bug fixes, clarifications, and additional sections.
+:::
+
+:::warning[Odin version]
+
+Tested in Odin version: `dev-2026-07:301c287de`
 
 :::
 

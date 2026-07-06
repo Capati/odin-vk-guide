@@ -4,6 +4,8 @@ This repository contains the tutorial code and website for [odin-vk-guide][], an
 adaptation of the popular [vkguide.dev][] Vulkan tutorial. Full credit for the original content
 goes to the authors of vkguide.dev.
 
+Tested in Odin version: `dev-2026-07:301c287de`
+
 > [!WARNING]
 > This project is a **work in progress**. Until all sections are complete, I may need to
 > refactor earlier chapters. If you're reading a chapter that has been affected by changes,
