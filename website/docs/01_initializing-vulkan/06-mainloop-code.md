@@ -534,8 +534,6 @@ This has to live in `engine_create_swapchain` rather than in `engine_init_sync_s
 because the number of swapchain images can change whenever we recreate the swapchain (for
 example on window resize), so the semaphore array needs to be resized right alongside it.
 
-Tearing them down is symmetric, and lives in `engine_destroy_swapchain`:
-
 These are destroyed in `engine_destroy_swapchain`:
 
 ```odin title="engine.odin"
