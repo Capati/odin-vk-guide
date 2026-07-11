@@ -593,11 +593,11 @@ engine_init_descriptors :: proc(self: ^Engine) -> (ok: bool) {
 }
 
 engine_init_background_pipelines :: proc(self: ^Engine) -> (ok: bool) {
-    GRADIENT_COLOR_SPV :: #load("./../shaders/compiled/gradient_color.comp.spv")
+    GRADIENT_COLOR_SPV :: #load("./../../shaders/compiled/gradient_color.comp.spv")
     gradient_color_shader := create_shader_module(self.vk_device, GRADIENT_COLOR_SPV) or_return
     defer vk.DestroyShaderModule(self.vk_device, gradient_color_shader, nil)
 
-    SKY_SPV :: #load("./../shaders/compiled/sky.comp.spv")
+    SKY_SPV :: #load("./../../shaders/compiled/sky.comp.spv")
     sky_shader := create_shader_module(self.vk_device, SKY_SPV) or_return
     defer vk.DestroyShaderModule(self.vk_device, sky_shader, nil)
 
@@ -664,11 +664,11 @@ engine_init_background_pipelines :: proc(self: ^Engine) -> (ok: bool) {
 
 engine_init_mesh_pipeline :: proc(self: ^Engine) -> (ok: bool) {
     mesh_frag_shader := create_shader_module(self.vk_device,
-        #load("./../shaders/compiled/tex_image.frag.spv")) or_return
+        #load("./../../shaders/compiled/tex_image.frag.spv")) or_return
     defer vk.DestroyShaderModule(self.vk_device, mesh_frag_shader, nil)
 
     mesh_vertex_shader := create_shader_module(self.vk_device,
-        #load("./../shaders/compiled/colored_triangle_mesh.vert.spv")) or_return
+        #load("./../../shaders/compiled/colored_triangle_mesh.vert.spv")) or_return
     defer vk.DestroyShaderModule(self.vk_device, mesh_vertex_shader, nil)
 
     buffer_range := vk.PushConstantRange {

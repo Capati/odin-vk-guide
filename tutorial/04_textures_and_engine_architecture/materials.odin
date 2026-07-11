@@ -56,11 +56,11 @@ metallic_roughness_build_pipelines :: proc(
     ok: bool,
 ) {
     mesh_frag_shader := create_shader_module(engine.vk_device,
-        #load("./../shaders/compiled/mesh.frag.spv")) or_return
+        #load("./../../shaders/compiled/mesh.frag.spv")) or_return
     defer vk.DestroyShaderModule(engine.vk_device, mesh_frag_shader, nil)
 
     mesh_vert_shader := create_shader_module(engine.vk_device,
-        #load("./../shaders/compiled/mesh.vert.spv")) or_return
+        #load("./../../shaders/compiled/mesh.vert.spv")) or_return
     defer vk.DestroyShaderModule(engine.vk_device, mesh_vert_shader, nil)
 
     self.device = engine.vk_device
