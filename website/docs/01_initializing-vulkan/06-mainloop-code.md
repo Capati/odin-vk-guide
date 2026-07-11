@@ -530,11 +530,16 @@ engine_create_swapchain :: proc(self: ^Engine, extent: vk.Extent2D) -> (ok: bool
 }
 ```
 
-This has to live in `engine_create_swapchain` rather than in `engine_init_sync_structures`,
-because the number of swapchain images can change whenever we recreate the swapchain (for
-example on window resize), so the semaphore array needs to be resized right alongside it.
+This has to live in `engine_create_swapchain` rather than in `engine_init_sync_structures`.
+`engine_init_sync_structures` creates the *per-frame-in-flight* sync objects, a fixed number
+of fences and semaphores, one set per frame, regardless of how many swapchain images exist.
+Those never need to change size.
 
-These are destroyed in `engine_destroy_swapchain`:
+The swapchain image semaphores are different: there's one per *swapchain image*, and that count
+can change whenever the swapchain is recreated (e.g. on window resize). So this array has to
+be allocated and rebuilt right alongside the swapchain itself, not once at startup.
+
+Now the cleanup happens in `engine_destroy_swapchain`:
 
 ```odin title="engine.odin"
 engine_destroy_swapchain :: proc(self: ^Engine) {
