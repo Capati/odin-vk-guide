@@ -516,7 +516,7 @@ engine_create_swapchain :: proc(self: ^Engine, extent: vk.Extent2D) -> (ok: bool
     //
     // Since a given image can't be re-acquired until the presentation engine is
     // done with the previous present of that same image
-    self.swapchain_image_semaphores = make([]vk.Semaphore, len(self.swapchain_images))[:]
+    self.swapchain_image_semaphores = make([]vk.Semaphore, len(self.swapchain_images))
     defer if !ok {delete(self.swapchain_image_semaphores)}
 
     // These need to be created here so that they are recreated when we resize.
